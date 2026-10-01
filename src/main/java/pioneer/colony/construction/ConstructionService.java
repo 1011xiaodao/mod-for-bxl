@@ -19,6 +19,7 @@ import pioneer.colony.blockentity.ColonyCoreBlockEntity;
 import pioneer.colony.colony.BuildingDefinitions;
 import pioneer.colony.colony.BuildingInstance;
 import pioneer.colony.colony.Colony;
+import pioneer.colony.colony.ColonyManager;
 import pioneer.colony.colony.ColonySavedData;
 import pioneer.colony.colony.ItemCost;
 import pioneer.colony.config.Config;
@@ -69,6 +70,15 @@ public final class ConstructionService {
         }
         if ("hq".equals(defId)) {
             return OpResult.fail("总部随殖民地创建生成，无需单独建造。");
+        }
+        // 研究门禁：research_required 校验玩家个人研究记录（[研究台] 账本，06 §5）
+        String required = def.researchRequired();
+        if (required != null && !required.isBlank()) {
+            var bridge = pioneer.colony.research.ResearchIntegration.bridge();
+            java.util.UUID researcher = player != null ? player.getUUID() : ColonyManager.DEBUG_OWNER;
+            if (bridge == null || !bridge.isDone(level.getServer(), researcher, required)) {
+                return OpResult.fail("需要先完成研究：" + required + (bridge == null ? "（当前无研究系统）" : ""));
+            }
         }
         if (!colony.ownsChunk(colony.getDimension(), pos.getX() >> 4, pos.getZ() >> 4)) {
             return OpResult.fail("只能在自有领地内建造（先购买区块：总部 GUI「领地」或 /colony chunk buy）。");
@@ -151,7 +161,7 @@ public final class ConstructionService {
         building.setPendingTier(nextTier);
         building.setBuildEndWall(System.currentTimeMillis() + def.tierBuildSeconds(nextTier) * 1000L);
         markDirty(level);
-        if (building.origin() >= 0) {
+        if (building.hasOrigin()) {
             placeBarriers(level, BlockPos.of(building.origin()), def.footprintW(), def.footprintD());
         }
         return OpResult.ok(String.format("%s 升级至 %d 级施工中（%d 秒）。", def.name(), nextTier, def.tierBuildSeconds(nextTier)));
@@ -276,7 +286,26 @@ public final class ConstructionService {
         return (long) Config.CONSTRUCTION_FEE_BASE.get() * tier;
     }
 
-    /** 扣料：仓库可用 → 缓冲扣；否则玩家背包；另扣一次性建设费。 */
+    /** 扣料：仓库可用 → 缓冲扣；否则玩家背包（建造与研究发起共用规则，06 §3.2/§5）。 */
+    public static OpResult payMaterials(Colony colony, ServerPlayer player, List<ItemCost> cost) {
+        boolean fromWarehouse = warehouseAvailable(colony);
+        if (fromWarehouse) {
+            if (!colony.hasAll(cost)) {
+                return OpResult.fail("殖民地仓库材料不足，请补料（仓库 GUI「存入全部」）。");
+            }
+            colony.takeAll(cost);
+            return OpResult.ok("");
+        }
+        if (player == null) {
+            return OpResult.fail("仓库不可用且无玩家背包可扣料。");
+        }
+        if (!takeFromInventory(player, cost)) {
+            return OpResult.fail("背包材料不足（仓库未建成，材料从背包扣）。");
+        }
+        return OpResult.ok("");
+    }
+
+    /** 扣料 + 一次性建设费。 */
     private static OpResult payCost(ServerLevel level, Colony colony, ServerPlayer player,
                                     List<ItemCost> cost, long fee, boolean free) {
         if (free) {
@@ -286,19 +315,9 @@ public final class ConstructionService {
         if (colony.getCredits() < fee) {
             return OpResult.fail("信用点不足：需 " + fee + "（现有 " + colony.getCredits() + "）。");
         }
-        boolean fromWarehouse = warehouseAvailable(colony);
-        if (fromWarehouse) {
-            if (!colony.hasAll(cost)) {
-                return OpResult.fail("殖民地仓库材料不足，请补料（仓库 GUI「存入全部」）。");
-            }
-            colony.takeAll(cost);
-        } else {
-            if (player == null) {
-                return OpResult.fail("仓库不可用且无玩家背包可扣料。");
-            }
-            if (!takeFromInventory(player, cost)) {
-                return OpResult.fail("背包材料不足（仓库未建成，材料从背包扣）。");
-            }
+        OpResult pay = payMaterials(colony, player, cost);
+        if (!pay.success()) {
+            return pay;
         }
         colony.adjustCredits(-fee);
         markDirty(level);
@@ -370,8 +389,12 @@ public final class ConstructionService {
         return true;
     }
 
-    /** 控制台/命令建造用：在 base 附近找一块可用的平整地面（螺旋尝试）。 */
-    public static BlockPos findClearOrigin(ServerLevel level, BlockPos base, int w, int h, int d) {
+    /**
+     * 控制台/命令建造用：在 base 附近找一块可用的平整地面（螺旋尝试）。
+     * 候选点除「立体空间净空」外，还须与既有建筑保持水平间距（含 2 格 margin）——
+     * 否则 getHeight 会把上一栋建筑的屋顶当作地面，导致建筑纵向堆叠（M6.3 冒烟发现的 M6.2 潜伏缺陷）。
+     */
+    public static BlockPos findClearOrigin(ServerLevel level, Colony colony, BlockPos base, int w, int h, int d) {
         int[][] offsets = {{0, 0}, {9, 0}, {-9, 0}, {0, 9}, {0, -9}, {9, 9}, {-9, -9}, {9, -9}, {-9, 9},
                 {18, 0}, {0, 18}, {-18, 0}, {0, -18}, {18, 9}, {-18, -9}};
         for (int[] o : offsets) {
@@ -379,11 +402,32 @@ public final class ConstructionService {
             int z = base.getZ() + o[1];
             int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, x, z);
             BlockPos candidate = new BlockPos(x, y, z);
-            if (isAreaClear(level, candidate, w, h, d)) {
-                return candidate;
+            if (!isAreaClear(level, candidate, w, h, d)) {
+                continue;
             }
+            if (colony != null && horizontallyOverlapsBuildings(colony, candidate, w, d)) {
+                continue;
+            }
+            return candidate;
         }
         return base;
+    }
+
+    /** 与既有建筑的水平包围盒（footprint + 2 格间距）是否重叠（与高度无关）。 */
+    private static boolean horizontallyOverlapsBuildings(Colony colony, BlockPos candidate, int w, int d) {
+        for (BuildingInstance b : colony.getBuildings()) {
+            if (!b.hasOrigin()) {
+                continue;
+            }
+            BlockPos o = BlockPos.of(b.origin());
+            if (candidate.getX() < o.getX() + b.footprintW() + 2
+                    && o.getX() < candidate.getX() + w + 2
+                    && candidate.getZ() < o.getZ() + b.footprintD() + 2
+                    && o.getZ() < candidate.getZ() + d + 2) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 围挡：footprint 外圈一格，地面与 +1 两层。 */

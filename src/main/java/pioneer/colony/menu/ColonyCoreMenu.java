@@ -8,6 +8,8 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import java.util.List;
+import java.util.UUID;
 import net.minecraft.world.level.ChunkPos;
 import pioneer.colony.colony.BuildingDefinition;
 import pioneer.colony.colony.BuildingDefinitions;
@@ -15,6 +17,7 @@ import pioneer.colony.colony.BuildingInstance;
 import pioneer.colony.colony.Colony;
 import pioneer.colony.colony.ColonyManager;
 import pioneer.colony.colony.ColonySavedData;
+import pioneer.colony.network.ColonyResearchPayload;
 import pioneer.colony.construction.ConstructionService;
 import pioneer.colony.config.Config;
 import pioneer.colony.registry.ModRegistry;
@@ -35,6 +38,8 @@ public class ColonyCoreMenu extends AbstractContainerMenu {
     public static final int BTN_PAGE_OVERVIEW = 10;
     public static final int BTN_PAGE_TERRITORY = 11;
     public static final int BTN_PAGE_CITY = 12;
+    public static final int BTN_PAGE_RESEARCH = 13;
+    public static final int BTN_RESEARCH_BASE = 2000;
     public static final int BTN_CONFIRM_ABANDON = 50;
     public static final int BTN_DISSOLVE = 60;
     public static final int BTN_MAP_BASE = 1000;
@@ -61,6 +66,7 @@ public class ColonyCoreMenu extends AbstractContainerMenu {
     public static final int SLOT_CONFIRMED = 15;
     public static final int SLOT_IS_HQ = 16;
     public static final int SLOT_IS_WAREHOUSE = 17;
+    public static final int SLOT_RESEARCH_AVAILABLE = 18;
     public static final int SLOT_MAP_BASE = 20; // + offset 0..120
     public static final int SLOT_COUNT = SLOT_MAP_BASE + MAP_SIZE * MAP_SIZE;
 
@@ -93,11 +99,15 @@ public class ColonyCoreMenu extends AbstractContainerMenu {
 
     // 服务端解析态
     private MinecraftServer server;
+    private ServerPlayer player;
     private Colony colony;
     private BuildingInstance building;
     private BuildingDefinition definition;
 
     // 服务端交互状态
+    private final ServerPlayer playerHolder = null;
+    private int sinceListSent = 0;
+    private boolean listDirty = false;
     private int selectedOffset = -1;
     private long dismantleArmWall = 0;
     private boolean dissolveArmed = false;
@@ -121,6 +131,7 @@ public class ColonyCoreMenu extends AbstractContainerMenu {
         if (!(be instanceof pioneer.colony.blockentity.ColonyCoreBlockEntity core)) {
             return;
         }
+        this.player = sp;
         this.server = level.getServer();
         this.colony = core.resolveColony(level.getServer());
         if (colony != null) {
@@ -189,6 +200,47 @@ public class ColonyCoreMenu extends AbstractContainerMenu {
         if (data[SLOT_PAGE] == 1) {
             refreshMapStates();
         }
+        if (data[SLOT_PAGE] == 3) {
+            sinceListSent++;
+            if (sinceListSent > 20 || listDirty) {
+                sendResearchList();
+            }
+        }
+    }
+
+    /** 研究页数据推送（动态文本超出 data slots 能力，走自定义 payload）。 */
+    private void sendResearchList() {
+        sinceListSent = 0;
+        listDirty = false;
+        if (!(player instanceof ServerPlayer sp) || colony == null || building == null) {
+            return;
+        }
+        var bridge = pioneer.colony.research.ResearchIntegration.bridge();
+        if (bridge == null) {
+            return;
+        }
+        UUID researcher = sp.getUUID();
+        var entries = bridge.visibleResearches(sp.server, researcher);
+        int slotsUsed = (int) entries.stream().filter(r -> r.state() == pioneer.colony.research.ResearchInfo.State.ACTIVE).count();
+        int slotsMax = pioneer.colony.research.ColonyResearchChannel.INSTANCE.maxParallel(sp.server, researcher);
+        int speedPercent = (int) Math.round(
+                (pioneer.colony.research.ColonyResearchChannel.INSTANCE.speedMultiplier(sp.server, researcher) - 1.0) * 100);
+        List<ColonyResearchPayload.Entry> payloadEntries = new java.util.ArrayList<>();
+        for (var r : entries) {
+            StringBuilder costText = new StringBuilder();
+            for (var c : r.cost()) {
+                if (costText.length() > 0) {
+                    costText.append(" + ");
+                }
+                costText.append(c.item()).append('×').append(c.count());
+            }
+            payloadEntries.add(new ColonyResearchPayload.Entry(r.id(), r.name(), r.channel(),
+                    costText.length() == 0 ? "无" : costText.toString(), r.stateText(),
+                    r.state() == pioneer.colony.research.ResearchInfo.State.AVAILABLE, r.remainingSeconds()));
+        }
+        ColonyResearchPayload payload = new ColonyResearchPayload(payloadEntries, slotsUsed, slotsMax,
+                speedPercent, pioneer.colony.config.Config.RESEARCH_ORG_FEE.get());
+        sp.connection.send(payload);
     }
 
     private void refreshMapStates() {

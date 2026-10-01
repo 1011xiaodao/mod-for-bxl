@@ -35,6 +35,9 @@ public final class ColonyManager {
         int intervalTicks = Math.max(1, Config.ECONOMY_TICK_SECONDS.get()) * 20;
         if (serverTickCounter % intervalTicks == 0) {
             EconomyTicker.settleAll(server, false);
+            if (pioneer.colony.research.ResearchIntegration.mode() == pioneer.colony.research.ResearchIntegration.Mode.STUB) {
+                pioneer.colony.research.StubResearchSystem.tickServer(server);
+            }
         }
     }
 
@@ -168,7 +171,7 @@ public final class ColonyManager {
         ServerLevel colonyLevel = level.getServer().getLevel(Level.OVERWORLD);
         // 清除总部结构（未加载区块由核心方块自清理兜底）
         for (BuildingInstance b : colony.getBuildings()) {
-            if (b.origin() >= 0 && colonyLevel != null && colonyLevel.isLoaded(BlockPos.of(b.origin()))) {
+            if (b.hasOrigin() && colonyLevel != null && colonyLevel.isLoaded(BlockPos.of(b.origin()))) {
                 BlueprintGenerator.clearArea(colonyLevel, BlockPos.of(b.origin()), b.footprintW(), b.footprintH(),
                         b.footprintD(), true);
             }

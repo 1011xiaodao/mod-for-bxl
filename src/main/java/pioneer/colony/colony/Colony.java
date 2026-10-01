@@ -55,6 +55,10 @@ public final class Colony {
     private OfflineSummary pendingSummary;
     private double starveMinutes = 0.0;
     private double growthProgress = 0.0;
+    /** colony 通道研究效果：建筑标签 → 产量加成百分比（叠加求和）。 */
+    private final Map<String, Double> researchProductionBonus = new LinkedHashMap<>();
+    /** colony 通道研究效果：市民上限加成。 */
+    private int researchCitizenCapBonus = 0;
 
     public Colony(UUID uuid, UUID owner, String name, String dimension, int blockX, int blockZ) {
         this.uuid = uuid;
@@ -184,7 +188,7 @@ public final class Colony {
 
     /** 建筑占地是否触及某区块（按 footprint 展开的区块范围）。 */
     public boolean buildingTouchesChunk(BuildingInstance b, int chunkX, int chunkZ) {
-        if (b.origin() < 0) {
+        if (!b.hasOrigin()) {
             return false;
         }
         BlockPos origin = BlockPos.of(b.origin());
@@ -213,7 +217,7 @@ public final class Colony {
     public boolean overlapsExisting(long originPos, int w, int h, int d) {
         BlockPos p = BlockPos.of(originPos);
         for (BuildingInstance b : buildings) {
-            if (b.origin() < 0) {
+            if (!b.hasOrigin()) {
                 continue;
             }
             BlockPos o = BlockPos.of(b.origin());
@@ -337,6 +341,15 @@ public final class Colony {
         tag.putLong("lastTickWallTime", lastTickWallTime);
         tag.putDouble("starveMinutes", starveMinutes);
         tag.putDouble("growthProgress", growthProgress);
+        ListTag bonusList = new ListTag();
+        for (Map.Entry<String, Double> e : researchProductionBonus.entrySet()) {
+            CompoundTag t = new CompoundTag();
+            t.putString("tag", e.getKey());
+            t.putDouble("percent", e.getValue());
+            bonusList.add(t);
+        }
+        tag.put("researchProductionBonus", bonusList);
+        tag.putInt("researchCitizenCapBonus", researchCitizenCapBonus);
         tag.putLong("lastPurchaseWallTime", lastPurchaseWallTime);
 
         ListTag territoryList = new ListTag();
@@ -395,6 +408,12 @@ public final class Colony {
         colony.lastTickWallTime = tag.getLong("lastTickWallTime");
         colony.starveMinutes = tag.getDouble("starveMinutes");
         colony.growthProgress = tag.getDouble("growthProgress");
+        ListTag bonusList = tag.getList("researchProductionBonus", Tag.TAG_COMPOUND);
+        for (int i = 0; i < bonusList.size(); i++) {
+            CompoundTag t = bonusList.getCompound(i);
+            colony.researchProductionBonus.put(t.getString("tag"), t.getDouble("percent"));
+        }
+        colony.researchCitizenCapBonus = tag.getInt("researchCitizenCapBonus");
         colony.lastPurchaseWallTime = tag.getLong("lastPurchaseWallTime");
 
         ListTag territoryList = tag.getList("territory", Tag.TAG_COMPOUND);
@@ -557,5 +576,28 @@ public final class Colony {
 
     public void setGrowthProgress(double growthProgress) {
         this.growthProgress = Math.max(0, growthProgress);
+    }
+
+    // —— 研究效果（colony 通道 onCompleted 写入，M6.3） ——
+
+    public void addResearchProductionBonus(String buildingTag, double percent) {
+        researchProductionBonus.merge(buildingTag, percent, Double::sum);
+    }
+
+    /** 产量全局加成（小数形式，如 0.10 = +10%）：空标签加成 + 标签命中之和。 */
+    public double productionBonusFor(List<String> buildingTags) {
+        double bonus = researchProductionBonus.getOrDefault("", 0.0);
+        for (String tag : buildingTags) {
+            bonus += researchProductionBonus.getOrDefault(tag, 0.0);
+        }
+        return bonus / 100.0;
+    }
+
+    public int getResearchCitizenCapBonus() {
+        return researchCitizenCapBonus;
+    }
+
+    public void addResearchCitizenCapBonus(int n) {
+        researchCitizenCapBonus += n;
     }
 }

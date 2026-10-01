@@ -1,0 +1,11 @@
+{
+  "id": "colony/agri_1",
+  "name": "轮作施肥",
+  "parent": "colony/root",
+  "channel": "colony_only",
+  "time_minutes": 2,
+  "cost": [{"item": "minecraft:wheat", "count": 8}],
+  "effects": {
+    "global_bonus": {"type": "production", "building_tag": "pioneer_colony:farming", "percent": 10}
+  }
+}

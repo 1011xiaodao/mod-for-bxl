@@ -1,0 +1,8 @@
+{
+  "id": "colony/root",
+  "name": "殖民地根基",
+  "channel": "common",
+  "time_minutes": 1,
+  "cost": [{"item": "minecraft:oak_planks", "count": 4}],
+  "effects": {}
+}

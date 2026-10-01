@@ -26,7 +26,9 @@ public final class BuildingInstance {
     private int tier;
     private Status status;
     private long chunk;
-    private long origin = -1;
+    private long origin = 0;
+    /** origin 是否有效（负坐标的 BlockPos.asLong 也是合法负数 long，不能用 <0 哨兵）。 */
+    private boolean originValid = false;
     private int footprintW = 5;
     private int footprintH = 5;
     private int footprintD = 5;
@@ -55,6 +57,7 @@ public final class BuildingInstance {
         tag.putString("status", status.name());
         tag.putLong("chunk", chunk);
         tag.putLong("origin", origin);
+        tag.putBoolean("originValid", originValid);
         tag.putInt("footprintW", footprintW);
         tag.putInt("footprintH", footprintH);
         tag.putInt("footprintD", footprintD);
@@ -75,7 +78,8 @@ public final class BuildingInstance {
                 tag.getString("definitionId"),
                 Math.max(1, tag.getInt("tier")),
                 tag.getLong("chunk"));
-        b.origin = tag.contains("origin") ? tag.getLong("origin") : -1;
+        b.origin = tag.getLong("origin");
+        b.originValid = tag.getBoolean("originValid");
         b.footprintW = tag.contains("footprintW") ? Math.max(1, tag.getInt("footprintW")) : 5;
         b.footprintH = tag.contains("footprintH") ? Math.max(1, tag.getInt("footprintH")) : 5;
         b.footprintD = tag.contains("footprintD") ? Math.max(1, tag.getInt("footprintD")) : 5;
@@ -128,8 +132,13 @@ public final class BuildingInstance {
         return origin;
     }
 
+    public boolean hasOrigin() {
+        return originValid;
+    }
+
     public void setOrigin(long origin) {
         this.origin = origin;
+        this.originValid = true;
     }
 
     public int footprintW() {

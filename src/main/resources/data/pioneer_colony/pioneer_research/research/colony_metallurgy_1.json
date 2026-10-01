@@ -1,0 +1,9 @@
+{
+  "id": "colony/metallurgy_1",
+  "name": "基础冶金",
+  "parent": "colony/root",
+  "channel": "common",
+  "time_minutes": 2,
+  "cost": [{"item": "minecraft:iron_ingot", "count": 8}],
+  "effects": {}
+}

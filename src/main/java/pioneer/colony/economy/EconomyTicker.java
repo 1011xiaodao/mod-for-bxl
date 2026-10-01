@@ -156,7 +156,6 @@ public final class EconomyTicker {
 
         // —— 2) 逐建筑：维护 + 生产 ——
         int remainingWorkers = colony.getPopulation();
-        double globalBonus = 1.0; // colony_only 研究加成接入位（M6.3）
         for (BuildingInstance building : colony.getBuildings()) {
             BuildingDefinition def = BuildingDefinitions.get(building.definitionId()).orElse(null);
             if (def == null) {
@@ -187,6 +186,8 @@ public final class EconomyTicker {
             }
             double maintenanceFactor = building.isMaintenanceSatisfied()
                     ? 1.0 : Config.MAINTENANCE_HALF_EFFICIENCY_FACTOR.get();
+            // 全局加成 = 1 + colony 通道研究效果（标签命中，M6.3）
+            double globalBonus = 1.0 + colony.productionBonusFor(def.tags());
 
             // 生产（受损伤 M6.4 后在此并入建筑状态因子）。
             // 幸福度乘数只作用于产出（士气提升单位投入产出比），不放大消耗
@@ -217,7 +218,8 @@ public final class EconomyTicker {
         }
 
         // —— 3) 人口自然增长（食物盈余且有空床位；乘幸福度乘数；正式验收 M6.6） ——
-        if (foodRate >= 1.0 && colony.getPopulation() < residentSlots) {
+        int citizenCap = residentSlots + colony.getResearchCitizenCapBonus();
+        if (foodRate >= 1.0 && colony.getPopulation() < citizenCap) {
             colony.setGrowthProgress(colony.getGrowthProgress()
                     + minutes / (double) GAME_DAY_MINUTES * happinessMultiplier);
             int interval = Config.POP_GROWTH_INTERVAL_GAME_DAYS.get();

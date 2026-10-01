@@ -11,6 +11,7 @@
     [{"item": "minecraft:iron_ingot", "count": 20}],
     [{"item": "minecraft:iron_ingot", "count": 32}]
   ],
+  "tags": ["pioneer_colony:farming"],
   "input_per_min": [],
   "output_item": "minecraft:wheat",
   "output_per_min_per_tier": [8, 12, 16, 22, 28],

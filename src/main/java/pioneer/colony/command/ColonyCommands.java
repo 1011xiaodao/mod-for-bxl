@@ -140,6 +140,15 @@ public final class ColonyCommands {
                                 .executes(ctx -> debugOrigin(ctx.getSource(), StringArgumentType.getString(ctx, "def")))))
                 .then(Commands.literal("dissolve").requires(s -> s.hasPermission(2))
                         .executes(ctx -> dissolve(ctx.getSource())))
+                .then(Commands.literal("research")
+                        .then(Commands.literal("list")
+                                .executes(ctx -> researchList(ctx.getSource())))
+                        .then(Commands.literal("start")
+                                .then(Commands.argument("id", StringArgumentType.string())
+                                        .executes(ctx -> researchStart(ctx.getSource(),
+                                                StringArgumentType.getString(ctx, "id")))))
+                        .then(Commands.literal("debugfinish").requires(s -> s.hasPermission(2))
+                                .executes(ctx -> researchDebugFinish(ctx.getSource()))))
                 .then(Commands.literal("withdraw").requires(s -> s.hasPermission(2))
                         .then(Commands.argument("item", StringArgumentType.string())
                                 .executes(ctx -> withdraw(ctx.getSource(), StringArgumentType.getString(ctx, "item"), Long.MAX_VALUE))
@@ -198,9 +207,9 @@ public final class ColonyCommands {
                 colony.getDimension(), colony.territorySize(),
                 colony.getHqState() == Colony.HqState.NORMAL ? "正常" : "停摆待修复"));
         double foodDays = EconomyTicker.foodDaysRemaining(colony);
-        sb.append(String.format("人口：%d/%d（床位）  信用点：%d  幸福度：%.0f（增速 ×%.2f）\n",
-                colony.getPopulation(), residentSlots(colony), colony.getCredits(),
-                colony.getHappiness(), 0.5 + colony.getHappiness() / 100.0));
+        sb.append(String.format("人口：%d/%d（床位，含研究加成）  信用点：%d  幸福度：%.0f（增速 ×%.2f）\n",
+                colony.getPopulation(), residentSlots(colony) + colony.getResearchCitizenCapBonus(),
+                colony.getCredits(), colony.getHappiness(), 0.5 + colony.getHappiness() / 100.0));
         sb.append(String.format("食物储备：可维持 %s 天  威胁值：%.0f（M6.4 启用）\n",
                 foodDays < 0 ? "∞" : String.format("%.1f", foodDays), colony.getThreatValue()));
 
@@ -465,7 +474,7 @@ public final class ColonyCommands {
             source.sendFailure(Component.literal("未知建筑定义：" + defId));
             return 0;
         }
-        BlockPos origin = ConstructionService.findClearOrigin(level, base,
+        BlockPos origin = ConstructionService.findClearOrigin(level, colony, base,
                 def.footprintW(), def.footprintH(), def.footprintD());
         var result = ConstructionService.placeFoundation(level,
                 source.getEntity() instanceof ServerPlayer p ? p : null, origin, defId, tier, free);
@@ -545,6 +554,66 @@ public final class ColonyCommands {
         return 1;
     }
 
+    // —— research（M6.3，与 GUI 研究页同源 ResearchService） ——
+
+    private static int researchList(CommandSourceStack source) {
+        var bridge = pioneer.colony.research.ResearchIntegration.bridge();
+        if (bridge == null) {
+            source.sendSuccess(() -> Component.literal("当前无研究系统（[研究台] 缺席且研究桩未开启），研究页隐藏。"), false);
+            return 1;
+        }
+        Colony colony = resolveColony(source);
+        UUID researcher = source.getEntity() instanceof ServerPlayer p ? p.getUUID()
+                : (colony != null ? colony.owner() : ColonyManager.DEBUG_OWNER);
+        var entries = bridge.visibleResearches(source.getServer(), researcher);
+        StringBuilder sb = new StringBuilder("研究列表：\n");
+        for (var r : entries) {
+            sb.append(String.format(" · %s [%s] %s 时长%d分 费用:", r.name(), r.channel(), r.stateText(), r.timeMinutes()));
+            for (var c : r.cost()) {
+                sb.append(' ').append(c.item()).append('×').append(c.count());
+            }
+            sb.append("（").append(r.id()).append("）\n");
+        }
+        int slotsMax = pioneer.colony.research.ColonyResearchChannel.INSTANCE.maxParallel(source.getServer(), researcher);
+        double speed = pioneer.colony.research.ColonyResearchChannel.INSTANCE.speedMultiplier(source.getServer(), researcher);
+        sb.append(String.format("并行槽位上限 %d（市政厅等级），研究加速 ×%.2f（科研员），组织费 %d 信用点。",
+                slotsMax, speed, Config.RESEARCH_ORG_FEE.get()));
+        String out = sb.toString();
+        source.sendSuccess(() -> Component.literal(out), false);
+        return 1;
+    }
+
+    private static int researchStart(CommandSourceStack source, String researchId) {
+        Colony colony = resolveColony(source);
+        if (colony == null) {
+            source.sendFailure(Component.literal("没有目标殖民地。"));
+            return 0;
+        }
+        ServerPlayer player = source.getEntity() instanceof ServerPlayer p ? p : null;
+        var result = pioneer.colony.research.ResearchService.startOrganized(
+                source.getServer(), player, colony, researchId);
+        if (result.success()) {
+            source.sendSuccess(() -> Component.literal(result.message()), true);
+            return 1;
+        }
+        source.sendFailure(Component.literal(result.message()));
+        return 0;
+    }
+
+    private static int researchDebugFinish(CommandSourceStack source) {
+        if (pioneer.colony.research.ResearchIntegration.mode()
+                != pioneer.colony.research.ResearchIntegration.Mode.STUB) {
+            source.sendFailure(Component.literal("仅研究桩模式可用（[研究台] 在位时请用其自身流程）。"));
+            return 0;
+        }
+        Colony colony = resolveColony(source);
+        UUID researcher = source.getEntity() instanceof ServerPlayer p ? p.getUUID()
+                : (colony != null ? colony.owner() : ColonyManager.DEBUG_OWNER);
+        int n = pioneer.colony.research.StubResearchSystem.debugFinish(source.getServer(), researcher);
+        source.sendSuccess(() -> Component.literal("已立即完成 " + n + " 项进行中研究（效果已应用）。"), true);
+        return 1;
+    }
+
     /** OP 调试：打印 build 命令将选中的放置点与重叠判定明细。 */
     private static int debugOrigin(CommandSourceStack source, String defId) {
         ServerLevel level = source.getLevel();
@@ -558,13 +627,13 @@ public final class ColonyCommands {
         }
         BlockPos base = source.getEntity() instanceof ServerPlayer p
                 ? p.blockPosition() : level.getSharedSpawnPos();
-        BlockPos origin = ConstructionService.findClearOrigin(level, base,
+        BlockPos origin = ConstructionService.findClearOrigin(level, colony, base,
                 def.footprintW(), def.footprintH(), def.footprintD());
         StringBuilder sb = new StringBuilder("base=" + base.toShortString() + " chosen=" + origin.toShortString() + "\n");
 
         for (BuildingInstance b : colony.getBuildings()) {
             sb.append(" · ").append(b.definitionId()).append(" origin=")
-              .append(b.origin() < 0 ? "-1" : net.minecraft.core.BlockPos.of(b.origin()).toShortString())
+              .append(!b.hasOrigin() ? "-1" : net.minecraft.core.BlockPos.of(b.origin()).toShortString())
               .append(" fp=").append(b.footprintW()).append('x').append(b.footprintH()).append('x').append(b.footprintD()).append("\n");
 
         }

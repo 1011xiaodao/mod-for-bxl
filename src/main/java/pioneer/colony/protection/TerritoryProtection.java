@@ -56,7 +56,7 @@ public final class TerritoryProtection {
     /** 位置是否在某建筑 footprint（或施工围挡环）内。 */
     private static boolean insideStructure(Colony colony, BlockPos pos, int expand) {
         for (BuildingInstance b : colony.getBuildings()) {
-            if (b.origin() < 0) {
+            if (!b.hasOrigin()) {
                 continue;
             }
             var origin = net.minecraft.core.BlockPos.of(b.origin());

@@ -20,6 +20,8 @@ public final class GameEvents {
     @SubscribeEvent
     public static void onAddReloadListeners(AddReloadListenerEvent event) {
         event.addListener(new BuildingDefinitions());
+        // 研究桩加载器（与 [研究台] 目录格式一致；桩未启用时仅空载）
+        event.addListener(new pioneer.colony.research.StubResearchSystem.DefLoader());
     }
 
     @SubscribeEvent

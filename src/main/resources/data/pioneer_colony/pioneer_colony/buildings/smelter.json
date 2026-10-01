@@ -11,6 +11,8 @@
     [{"item": "minecraft:copper_ingot", "count": 32}],
     [{"item": "minecraft:gold_ingot", "count": 20}]
   ],
+  "tags": ["pioneer_colony:smelting"],
+  "research_required": "colony/metallurgy_1",
   "input_per_min": [{"item": "minecraft:iron_ore", "count": 4}],
   "output_item": "minecraft:iron_ingot",
   "output_per_min_per_tier": [6, 9, 13, 18, 24],

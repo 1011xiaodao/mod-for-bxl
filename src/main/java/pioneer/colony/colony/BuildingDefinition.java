@@ -28,6 +28,8 @@ public final class BuildingDefinition {
     private final List<Integer> bufferSlotsPerTier;
     private final List<Integer> bufferPerTypeCapacityPerTier;
     private final String researchRequired;
+    /** 建筑标签（研究 global_bonus.building_tag 匹配用）。 */
+    private final List<String> tags;
     /** 占地 [宽,高,深]（方块），程序化蓝图与保护范围依据。 */
     private final int[] footprint;
 
@@ -36,7 +38,7 @@ public final class BuildingDefinition {
                                List<Double> outputPerMinPerTier, List<Integer> workerSlotsPerTier, String profession,
                                List<ItemCost> maintenancePerHour, int populationProvided,
                                List<Integer> residentSlotsPerTier, List<Integer> bufferSlotsPerTier,
-                               List<Integer> bufferPerTypeCapacityPerTier, String researchRequired, int[] footprint) {
+                               List<Integer> bufferPerTypeCapacityPerTier, String researchRequired, List<String> tags, int[] footprint) {
         this.id = id;
         this.name = name;
         this.maxTier = maxTier;
@@ -53,6 +55,7 @@ public final class BuildingDefinition {
         this.bufferSlotsPerTier = bufferSlotsPerTier;
         this.bufferPerTypeCapacityPerTier = bufferPerTypeCapacityPerTier;
         this.researchRequired = researchRequired;
+        this.tags = List.copyOf(tags);
         this.footprint = footprint.clone();
     }
 
@@ -74,6 +77,7 @@ public final class BuildingDefinition {
         List<Integer> bufferSlots = readTieredInts(json, "buffer_slots_per_tier", maxTier, false);
         List<Integer> bufferCapacity = readTieredInts(json, "buffer_per_type_capacity_per_tier", maxTier, false);
         String researchRequired = optString(json, "research_required");
+        List<String> tags = readTags(json);
         int[] fp = readFootprint(json);
         if (fp == null) {
             fp = new int[]{5, 5, 5};
@@ -84,7 +88,7 @@ public final class BuildingDefinition {
         }
         return new BuildingDefinition(id, name, maxTier, buildSeconds, costPerTier, inputPerMin, outputItem,
                 outputPerMin, workerSlots, profession, maintenance, populationProvided,
-                residentSlots, bufferSlots, bufferCapacity, researchRequired, fp);
+                residentSlots, bufferSlots, bufferCapacity, researchRequired, tags, fp);
     }
 
     // —— 按等级取值（tier 从 1 开始，越界收敛到 maxTier） ——
@@ -246,6 +250,19 @@ public final class BuildingDefinition {
         return new ItemCost(item, count);
     }
 
+    /** tags: 建筑标签数组（可选）。 */
+    private static List<String> readTags(JsonObject json) {
+        if (!json.has("tags")) {
+            return List.of();
+        }
+        JsonArray arr = json.get("tags").getAsJsonArray();
+        List<String> out = new ArrayList<>();
+        for (JsonElement e : arr) {
+            out.add(e.getAsString());
+        }
+        return out;
+    }
+
     /** footprint_size: [宽,高,深]（可选，默认 5×5×5）。 */
     private static int[] readFootprint(JsonObject json) {
         if (!json.has("footprint_size")) {
@@ -312,6 +329,10 @@ public final class BuildingDefinition {
 
     public String researchRequired() {
         return researchRequired;
+    }
+
+    public List<String> tags() {
+        return tags;
     }
 
     public int footprintW() {

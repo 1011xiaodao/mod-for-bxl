@@ -39,6 +39,11 @@ public final class Config {
     public static final ModConfigSpec.IntValue DISMANTLE_SECONDS;
     public static final ModConfigSpec.IntValue DISMANTLE_REFUND_PERCENT;
 
+    public static final ModConfigSpec.BooleanValue RESEARCH_STUB_ENABLED;
+    public static final ModConfigSpec.IntValue RESEARCH_ORG_FEE;
+    public static final ModConfigSpec.DoubleValue RESEARCH_SPEED_PER_SCIENTIST;
+    public static final ModConfigSpec.DoubleValue RESEARCH_SPEED_CAP;
+
     public static final ModConfigSpec.BooleanValue DEBUG_LOG_ECONOMY_TICK;
 
     static {
@@ -107,6 +112,17 @@ public final class Config {
         b.push("maintenance");
         MAINTENANCE_HALF_EFFICIENCY_FACTOR = b.comment("维护断供时建筑效率倍率（定稿：效率减半）")
                 .defineInRange("halfEfficiencyFactor", 0.5, 0.0, 1.0);
+        b.pop();
+
+        b.push("research");
+        RESEARCH_STUB_ENABLED = b.comment("研究桩开关（开发联调用）：[研究台] pioneer_research 在位时自动失效；关闭且无 [研究台] 时研究页隐藏（06 §5 软依赖）")
+                .define("stubEnabled", true);
+        RESEARCH_ORG_FEE = b.comment("组织化研究一次性信用点组织费（定稿可配）")
+                .defineInRange("orgFee", 20, 0, 1_000_000);
+        RESEARCH_SPEED_PER_SCIENTIST = b.comment("每在岗科研员研究速度加成（定稿 +15%）")
+                .defineInRange("speedPerScientist", 0.15, 0.0, 10.0);
+        RESEARCH_SPEED_CAP = b.comment("研究速度加成上限（定稿 +60%）")
+                .defineInRange("speedCap", 0.6, 0.0, 10.0);
         b.pop();
 
         b.push("debug");

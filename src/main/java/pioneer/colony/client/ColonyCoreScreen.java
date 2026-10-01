@@ -43,7 +43,28 @@ public class ColonyCoreScreen extends AbstractContainerScreen<ColonyCoreMenu> {
                     b -> sendButton(ColonyCoreMenu.BTN_PAGE_TERRITORY)).bounds(x + 44, y, 40, 16).build());
             addRenderableWidget(Button.builder(Component.literal("管理"),
                     b -> sendButton(ColonyCoreMenu.BTN_PAGE_CITY)).bounds(x + 88, y, 40, 16).build());
+            if (menu.data(ColonyCoreMenu.SLOT_RESEARCH_AVAILABLE) == 1) {
+                addRenderableWidget(Button.builder(Component.literal("研究"),
+                        b -> sendButton(ColonyCoreMenu.BTN_PAGE_RESEARCH)).bounds(x + 132, y, 40, 16).build());
+            }
             y += 20;
+        }
+
+        if (page == 3) {
+            var payload = pioneer.colony.network.ClientResearchCache.latest;
+            if (payload != null) {
+                int ey = y + 16;
+                for (int i = 0; i < payload.entries().size() && i < 8; i++) {
+                    var e = payload.entries().get(i);
+                    if (e.startable()) {
+                        final int idx = i;
+                        addRenderableWidget(Button.builder(Component.literal("发起"),
+                                b -> sendButton(ColonyCoreMenu.BTN_RESEARCH_BASE + idx))
+                                .bounds(leftPos + 150, ey, 40, 14).build());
+                    }
+                    ey += 16;
+                }
+            }
         }
         int status = menu.data(ColonyCoreMenu.SLOT_STATUS);
         if (page == 0) {
@@ -75,12 +96,23 @@ public class ColonyCoreScreen extends AbstractContainerScreen<ColonyCoreMenu> {
         }
     }
 
+    private Object lastCacheRef = null;
+
     @Override
     public void containerTick() {
         super.containerTick();
-        if (menu.page() != lastPage) {
+        if (menu.page() != lastPage || ClientResearchCacheChanged()) {
             refreshPageWidgets();
         }
+    }
+
+    private boolean ClientResearchCacheChanged() {
+        var current = pioneer.colony.network.ClientResearchCache.latest;
+        if (current != lastCacheRef) {
+            lastCacheRef = current;
+            return menu.page() == 3;
+        }
+        return false;
     }
 
     @Override
@@ -130,6 +162,31 @@ public class ColonyCoreScreen extends AbstractContainerScreen<ColonyCoreMenu> {
                     + menu.clientData(ColonyCoreMenu.SLOT_MAX_CHUNKS) + "  下块价格 "
                     + menu.clientData(ColonyCoreMenu.SLOT_PRICE) + "  冷却 "
                     + menu.clientData(ColonyCoreMenu.SLOT_COOLDOWN) + "s", x, y + 14 + MAP_SIZE * MAP_CELL + 6, 0xFFE2E8F0, false);
+        } else if (page == 3) {
+            var payload = pioneer.colony.network.ClientResearchCache.latest;
+            if (payload == null) {
+                graphics.drawString(font, "等待研究数据同步……", x, y + 12, 0xFFA0AEC0, false);
+            } else {
+                graphics.drawString(font, String.format("并行 %d/%d  加成 +%d%%  组织费 %d",
+                        payload.slotsUsed(), payload.slotsMax(), payload.speedPercent(), payload.orgFee()),
+                        x, y + 12, 0xFF9AE6B4, false);
+                int ey = y + 28;
+                for (var e : payload.entries()) {
+                    int color = switch (e.stateText()) {
+                        case "可发起" -> 0xFF9AE6B4;
+                        case "进行中" -> 0xFFF6E05E;
+                        case "已完成" -> 0xFF63B3ED;
+                        default -> 0xFF718096;
+                    };
+                    String line = e.name() + " [" + e.channel() + "] " + e.stateText();
+                    graphics.drawString(font, line, x, ey, color, false);
+                    graphics.drawString(font, e.costText(), x + 100, ey, 0xFFA0AEC0, false);
+                    if (e.stateText().equals("进行中")) {
+                        graphics.drawString(font, "剩余 " + e.remainingSeconds() + "s", x + 100, ey + 8, 0xFFF6E05E, false);
+                    }
+                    ey += 16;
+                }
+            }
         } else if (page == 2) {
             graphics.drawString(font, "城市管理", x, y + 12, 0xFFE2E8F0, false);
             graphics.drawString(font, "解散前置：先拆除全部建筑", x, y + 24, 0xFFA0AEC0, false);

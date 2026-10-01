@@ -1,0 +1,11 @@
+{
+  "id": "colony/urban_1",
+  "name": "集体宿舍",
+  "parent": "colony/root",
+  "channel": "colony_only",
+  "time_minutes": 2,
+  "cost": [{"item": "minecraft:oak_planks", "count": 8}],
+  "effects": {
+    "citizen_cap_bonus": 2
+  }
+}
