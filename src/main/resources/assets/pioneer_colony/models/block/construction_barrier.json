@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:block/cube_all",
+  "textures": {
+    "all": "pioneer_colony:block/construction_barrier"
+  }
+}

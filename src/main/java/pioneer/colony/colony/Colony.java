@@ -1,21 +1,22 @@
 package pioneer.colony.colony;
 
-import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
-import it.unimi.dsi.fastutil.longs.LongSet;
+import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
+import net.minecraft.world.level.ChunkPos;
 import pioneer.colony.config.Config;
 import pioneer.colony.economy.OfflineSummary;
 
 /**
- * 殖民地数据模型（06 §3.1）。每玩家 1 个（可配），全部为存档数据（SavedData 持久化），
+ * 殖民地数据模型（06 §3.1/§4）。每玩家 1 个（可配），全部为存档数据（SavedData 持久化），
  * 主线程独占访问；经济 tick 只做纯数据公式运算，与区块加载完全解耦。
  * 威胁值/研究进度等字段随对应里程碑（M6.3/M6.4）激活，字段先留位。
  */
@@ -27,13 +28,22 @@ public final class Colony {
         STOPPED
     }
 
+    /** 信任名单两档权限（06 §4）：访客=通行+贸易站交互；可信=+开建筑 GUI 收货。 */
+    public enum Trust {
+        VISITOR,
+        TRUSTED
+    }
+
     private final UUID uuid;
     private UUID owner;
     private String name;
     private String dimension;
     private long hqChunk;
     private HqState hqState = HqState.NORMAL;
-    private final Map<String, LongSet> territory = new LinkedHashMap<>();
+    /** 领地：维度 → (区块 → 实付购地费，免费块=0)。退地按实付价退款。 */
+    private final Map<String, Long2LongOpenHashMap> territory = new LinkedHashMap<>();
+    private final Map<UUID, Trust> trust = new LinkedHashMap<>();
+    private long lastPurchaseWallTime = 0;
     private final List<BuildingInstance> buildings = new ArrayList<>();
     private int population;
     private final LinkedHashMap<String, Long> buffer = new LinkedHashMap<>();
@@ -51,32 +61,174 @@ public final class Colony {
         this.owner = owner;
         this.name = name;
         this.dimension = dimension;
-        this.hqChunk = net.minecraft.world.level.ChunkPos.asLong(blockX >> 4, blockZ >> 4);
+        this.hqChunk = ChunkPos.asLong(blockX >> 4, blockZ >> 4);
         this.lastTickWallTime = 0L;
     }
 
-    // —— 领地（M6.1 数据结构就位；购买/保护流程 M6.2） ——
+    // —— 领地（M6.2：购买/退地/相邻校验） ——
 
-    public void claimChunk(String dimensionKey, int chunkX, int chunkZ) {
-        territory.computeIfAbsent(dimensionKey, k -> new LongOpenHashSet())
-                .add(net.minecraft.world.level.ChunkPos.asLong(chunkX, chunkZ));
+    public void claimChunk(String dimensionKey, int chunkX, int chunkZ, long paidPrice) {
+        territory.computeIfAbsent(dimensionKey, k -> new Long2LongOpenHashMap())
+                .put(ChunkPos.asLong(chunkX, chunkZ), paidPrice);
     }
 
     public boolean ownsChunk(String dimensionKey, int chunkX, int chunkZ) {
-        LongSet set = territory.get(dimensionKey);
-        return set != null && set.contains(net.minecraft.world.level.ChunkPos.asLong(chunkX, chunkZ));
+        Long2LongOpenHashMap map = territory.get(dimensionKey);
+        return map != null && map.containsKey(ChunkPos.asLong(chunkX, chunkZ));
+    }
+
+    /** 区块实付购地费（免费块 0）；不拥有返回 -1。 */
+    public long chunkPaidPrice(String dimensionKey, int chunkX, int chunkZ) {
+        Long2LongOpenHashMap map = territory.get(dimensionKey);
+        if (map == null) {
+            return -1;
+        }
+        return map.getOrDefault(ChunkPos.asLong(chunkX, chunkZ), -1);
+    }
+
+    public boolean abandonChunk(String dimensionKey, int chunkX, int chunkZ) {
+        Long2LongOpenHashMap map = territory.get(dimensionKey);
+        if (map == null) {
+            return false;
+        }
+        long key = ChunkPos.asLong(chunkX, chunkZ);
+        if (!map.containsKey(key)) {
+            return false;
+        }
+        map.remove(key);
+        return true;
+    }
+
+    /** 是否与已有领地（4 向）相邻。 */
+    public boolean isAdjacentToTerritory(String dimensionKey, int chunkX, int chunkZ) {
+        return ownsChunk(dimensionKey, chunkX + 1, chunkZ) || ownsChunk(dimensionKey, chunkX - 1, chunkZ)
+                || ownsChunk(dimensionKey, chunkX, chunkZ + 1) || ownsChunk(dimensionKey, chunkX, chunkZ - 1);
     }
 
     public int territorySize() {
         int n = 0;
-        for (LongSet set : territory.values()) {
-            n += set.size();
+        for (Long2LongOpenHashMap map : territory.values()) {
+            n += map.size();
         }
         return n;
     }
 
-    public Collection<Map.Entry<String, LongSet>> territoryEntries() {
+    public Collection<Map.Entry<String, Long2LongOpenHashMap>> territoryEntries() {
         return territory.entrySet();
+    }
+
+    public int chunkCountIn(String dimensionKey) {
+        Long2LongOpenHashMap map = territory.get(dimensionKey);
+        return map == null ? 0 : map.size();
+    }
+
+    // —— 信任名单 ——
+
+    public Trust trustOf(UUID player) {
+        return trust.get(player);
+    }
+
+    public void setTrust(UUID player, Trust level) {
+        if (level == null) {
+            trust.remove(player);
+        } else {
+            trust.put(player, level);
+        }
+    }
+
+    public Map<UUID, Trust> trustEntries() {
+        return trust;
+    }
+
+    /** 是否可开建筑 GUI（总督本人或可信）。 */
+    public boolean canOpenGui(UUID player) {
+        return owner.equals(player) || trust.get(player) == Trust.TRUSTED;
+    }
+
+    public boolean isOwner(UUID player) {
+        return owner.equals(player);
+    }
+
+    public long getLastPurchaseWallTime() {
+        return lastPurchaseWallTime;
+    }
+
+    public void setLastPurchaseWallTime(long t) {
+        this.lastPurchaseWallTime = t;
+    }
+
+    // —— 建筑 ——
+
+    public void addBuilding(BuildingInstance building) {
+        buildings.add(building);
+    }
+
+    public boolean removeBuildingByDefinition(String definitionId) {
+        for (int i = 0; i < buildings.size(); i++) {
+            if (buildings.get(i).definitionId().equals(definitionId)) {
+                buildings.remove(i);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public BuildingInstance buildingAtOrigin(long originPos) {
+        for (BuildingInstance b : buildings) {
+            if (b.origin() == originPos) {
+                return b;
+            }
+        }
+        return null;
+    }
+
+    /** 建筑占地是否触及某区块（按 footprint 展开的区块范围）。 */
+    public boolean buildingTouchesChunk(BuildingInstance b, int chunkX, int chunkZ) {
+        if (b.origin() < 0) {
+            return false;
+        }
+        BlockPos origin = BlockPos.of(b.origin());
+        int w = b.footprintW();
+        int d = b.footprintD();
+        int minCx = origin.getX() >> 4;
+        int maxCx = (origin.getX() + w - 1) >> 4;
+        int minCz = origin.getZ() >> 4;
+        int maxCz = (origin.getZ() + d - 1) >> 4;
+        return chunkX >= minCx && chunkX <= maxCx && chunkZ >= minCz && chunkZ <= maxCz;
+    }
+
+    public boolean anyBuildingTouchesChunk(String dimensionKey, int chunkX, int chunkZ) {
+        if (!dimensionKey.equals(this.dimension)) {
+            return false;
+        }
+        for (BuildingInstance b : buildings) {
+            if (buildingTouchesChunk(b, chunkX, chunkZ)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 建筑占地是否与既有建筑重叠。 */
+    public boolean overlapsExisting(long originPos, int w, int h, int d) {
+        BlockPos p = BlockPos.of(originPos);
+        for (BuildingInstance b : buildings) {
+            if (b.origin() < 0) {
+                continue;
+            }
+            BlockPos o = BlockPos.of(b.origin());
+            boolean overlapX = p.getX() < o.getX() + b.footprintW() && o.getX() < p.getX() + w;
+            boolean overlapY = p.getY() < o.getY() + b.footprintH() && o.getY() < p.getY() + h;
+            boolean overlapZ = p.getZ() < o.getZ() + b.footprintD() && o.getZ() < p.getZ() + d;
+            if (overlapX && overlapY && overlapZ) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public List<BuildingInstance> getBuildings() {
+        return buildings;
     }
 
     // —— 资源缓冲（容量 = 基础 + 活跃仓库类建筑加成） ——
@@ -138,6 +290,23 @@ public final class Colony {
         return buffer.getOrDefault(item, 0L);
     }
 
+    /** 缓冲是否拥有全部物品（不扣减）。 */
+    public boolean hasAll(List<ItemCost> costs) {
+        for (ItemCost cost : costs) {
+            if (countOf(cost.item()) < cost.count()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** 扣减整组物品（假定 hasAll 已通过），返回实际扣减。 */
+    public void takeAll(List<ItemCost> costs) {
+        for (ItemCost cost : costs) {
+            takeItems(cost.item(), cost.count());
+        }
+    }
+
     /** 缓冲只读快照（跨线程传不可变快照纪律）。 */
     public Map<String, Long> bufferSnapshot() {
         return Map.copyOf(buffer);
@@ -149,26 +318,6 @@ public final class Colony {
 
     public Map<String, Long> pseudoStorageSnapshot() {
         return Map.copyOf(pseudoStorage);
-    }
-
-    // —— 建筑 ——
-
-    public void addBuilding(BuildingInstance building) {
-        buildings.add(building);
-    }
-
-    public boolean removeBuildingByDefinition(String definitionId) {
-        for (int i = 0; i < buildings.size(); i++) {
-            if (buildings.get(i).definitionId().equals(definitionId)) {
-                buildings.remove(i);
-                return true;
-            }
-        }
-        return false;
-    }
-
-    public List<BuildingInstance> getBuildings() {
-        return buildings;
     }
 
     // —— NBT ——
@@ -188,15 +337,32 @@ public final class Colony {
         tag.putLong("lastTickWallTime", lastTickWallTime);
         tag.putDouble("starveMinutes", starveMinutes);
         tag.putDouble("growthProgress", growthProgress);
+        tag.putLong("lastPurchaseWallTime", lastPurchaseWallTime);
 
         ListTag territoryList = new ListTag();
-        for (Map.Entry<String, LongSet> e : territory.entrySet()) {
+        for (Map.Entry<String, Long2LongOpenHashMap> e : territory.entrySet()) {
             CompoundTag t = new CompoundTag();
             t.putString("dim", e.getKey());
-            t.putLongArray("chunks", e.getValue().toLongArray());
+            ListTag chunkList = new ListTag();
+            for (Long2LongOpenHashMap.Entry ce : e.getValue().long2LongEntrySet()) {
+                CompoundTag c = new CompoundTag();
+                c.putLong("chunk", ce.getLongKey());
+                c.putLong("paid", ce.getLongValue());
+                chunkList.add(c);
+            }
+            t.put("chunks", chunkList);
             territoryList.add(t);
         }
         tag.put("territory", territoryList);
+
+        ListTag trustList = new ListTag();
+        for (Map.Entry<UUID, Trust> e : trust.entrySet()) {
+            CompoundTag t = new CompoundTag();
+            t.putUUID("player", e.getKey());
+            t.putString("level", e.getValue().name());
+            trustList.add(t);
+        }
+        tag.put("trust", trustList);
 
         ListTag buildingList = new ListTag();
         for (BuildingInstance b : buildings) {
@@ -229,14 +395,25 @@ public final class Colony {
         colony.lastTickWallTime = tag.getLong("lastTickWallTime");
         colony.starveMinutes = tag.getDouble("starveMinutes");
         colony.growthProgress = tag.getDouble("growthProgress");
+        colony.lastPurchaseWallTime = tag.getLong("lastPurchaseWallTime");
 
         ListTag territoryList = tag.getList("territory", Tag.TAG_COMPOUND);
         for (int i = 0; i < territoryList.size(); i++) {
             CompoundTag t = territoryList.getCompound(i);
-            long[] chunks = t.getLongArray("chunks");
-            LongSet set = colony.territory.computeIfAbsent(t.getString("dim"), k -> new LongOpenHashSet());
-            for (long c : chunks) {
-                set.add(c);
+            Long2LongOpenHashMap chunks = colony.territory.computeIfAbsent(t.getString("dim"), k -> new Long2LongOpenHashMap());
+            ListTag chunkList = t.getList("chunks", Tag.TAG_COMPOUND);
+            for (int j = 0; j < chunkList.size(); j++) {
+                CompoundTag c = chunkList.getCompound(j);
+                chunks.put(c.getLong("chunk"), c.getLong("paid"));
+            }
+        }
+
+        ListTag trustList = tag.getList("trust", Tag.TAG_COMPOUND);
+        for (int i = 0; i < trustList.size(); i++) {
+            CompoundTag t = trustList.getCompound(i);
+            try {
+                colony.trust.put(t.getUUID("player"), Trust.valueOf(t.getString("level")));
+            } catch (IllegalArgumentException ignored) {
             }
         }
 

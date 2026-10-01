@@ -1,0 +1,5 @@
+{
+  "variants": {
+    "": { "model": "pioneer_colony:block/colony_core" }
+  }
+}

@@ -19,5 +19,10 @@ public final class PioneerColony {
 
     public PioneerColony(IEventBus modEventBus, ModContainer modContainer) {
         modContainer.registerConfig(ModConfig.Type.SERVER, Config.SPEC);
+        pioneer.colony.registry.ModRegistry.BLOCKS.register(modEventBus);
+        pioneer.colony.registry.ModRegistry.ITEMS.register(modEventBus);
+        pioneer.colony.registry.ModRegistry.BLOCK_ENTITIES.register(modEventBus);
+        pioneer.colony.registry.ModRegistry.MENUS.register(modEventBus);
+        pioneer.colony.registry.ModRegistry.CREATIVE_TABS.register(modEventBus);
     }
 }

@@ -27,8 +27,17 @@ public final class Config {
     public static final ModConfigSpec.DoubleValue HAPPINESS_HOUSING_WEIGHT;
 
     public static final ModConfigSpec.IntValue TERRITORY_MAX_CHUNKS;
+    public static final ModConfigSpec.IntValue CHUNK_PRICE_BASE;
+    public static final ModConfigSpec.IntValue PURCHASE_COOLDOWN_SECONDS;
+    public static final ModConfigSpec.IntValue ABANDON_REFUND_PERCENT;
+    public static final ModConfigSpec.BooleanValue ALLOW_ENCLAVE;
 
     public static final ModConfigSpec.DoubleValue MAINTENANCE_HALF_EFFICIENCY_FACTOR;
+
+    public static final ModConfigSpec.BooleanValue CONSTRUCTION_FEE_ENABLED;
+    public static final ModConfigSpec.IntValue CONSTRUCTION_FEE_BASE;
+    public static final ModConfigSpec.IntValue DISMANTLE_SECONDS;
+    public static final ModConfigSpec.IntValue DISMANTLE_REFUND_PERCENT;
 
     public static final ModConfigSpec.BooleanValue DEBUG_LOG_ECONOMY_TICK;
 
@@ -74,6 +83,25 @@ public final class Config {
         b.push("territory");
         TERRITORY_MAX_CHUNKS = b.comment("领地区块数量上限（防一人圈全服）")
                 .defineInRange("maxChunks", 256, 9, 100_000);
+        CHUNK_PRICE_BASE = b.comment("购地基础价：第 N 块价格 = 基础价 × N（N=含免费块的总持有数+1，待项目主调）")
+                .defineInRange("chunkPriceBase", 20, 0, 1_000_000);
+        PURCHASE_COOLDOWN_SECONDS = b.comment("购地冷却（秒，防手滑连买）")
+                .defineInRange("purchaseCooldownSeconds", 30, 0, 3600);
+        ABANDON_REFUND_PERCENT = b.comment("退地退款比例（% 实付购地费）")
+                .defineInRange("abandonRefundPercent", 50, 0, 100);
+        ALLOW_ENCLAVE = b.comment("是否允许购买不相邻的飞地（定稿默认禁止）")
+                .define("allowEnclave", false);
+        b.pop();
+
+        b.push("construction");
+        CONSTRUCTION_FEE_ENABLED = b.comment("建造/升级收取一次性信用点建设费（定稿默认开启）")
+                .define("feeEnabled", true);
+        CONSTRUCTION_FEE_BASE = b.comment("一次性建设费 = 基础价 × 建筑等级")
+                .defineInRange("feeBase", 10, 0, 1_000_000);
+        DISMANTLE_SECONDS = b.comment("拆除倒计时（秒）")
+                .defineInRange("dismantleSeconds", 60, 1, 3600);
+        DISMANTLE_REFUND_PERCENT = b.comment("拆除返还材料比例（% 建造材料；建设费不退）")
+                .defineInRange("dismantleRefundPercent", 50, 0, 100);
         b.pop();
 
         b.push("maintenance");

@@ -1,6 +1,7 @@
 package pioneer.colony.command;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -14,6 +15,7 @@ import java.util.UUID;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -26,6 +28,7 @@ import pioneer.colony.colony.BuildingInstance;
 import pioneer.colony.colony.Colony;
 import pioneer.colony.colony.ColonyManager;
 import pioneer.colony.colony.ColonySavedData;
+import pioneer.colony.construction.ConstructionService;
 import pioneer.colony.config.Config;
 import pioneer.colony.economy.EconomyTicker;
 
@@ -84,7 +87,65 @@ public final class ColonyCommands {
                                                         StringArgumentType.getString(ctx, "item"),
                                                         LongArgumentType.getLong(ctx, "count")))))))
                 .then(Commands.literal("summary").requires(s -> s.hasPermission(2))
-                        .executes(ctx -> showSummary(ctx.getSource())));
+                        .executes(ctx -> showSummary(ctx.getSource())))
+                .then(Commands.literal("chunk").requires(s -> s.hasPermission(2))
+                        .then(Commands.literal("price")
+                                .executes(ctx -> chunkPrice(ctx.getSource())))
+                        .then(Commands.literal("buy")
+                                .then(Commands.argument("cx", IntegerArgumentType.integer())
+                                        .then(Commands.argument("cz", IntegerArgumentType.integer())
+                                                .executes(ctx -> chunkBuy(ctx.getSource(),
+                                                        IntegerArgumentType.getInteger(ctx, "cx"),
+                                                        IntegerArgumentType.getInteger(ctx, "cz"))))))
+                        .then(Commands.literal("abandon")
+                                .then(Commands.argument("cx", IntegerArgumentType.integer())
+                                        .then(Commands.argument("cz", IntegerArgumentType.integer())
+                                                .executes(ctx -> chunkAbandon(ctx.getSource(),
+                                                        IntegerArgumentType.getInteger(ctx, "cx"),
+                                                        IntegerArgumentType.getInteger(ctx, "cz")))))))
+                .then(Commands.literal("trust").requires(s -> s.hasPermission(2))
+                        .then(Commands.literal("add")
+                                .then(Commands.argument("player", StringArgumentType.string())
+                                        .executes(ctx -> trust(ctx.getSource(),
+                                                StringArgumentType.getString(ctx, "player"), true))))
+                        .then(Commands.literal("remove")
+                                .then(Commands.argument("player", StringArgumentType.string())
+                                        .executes(ctx -> trust(ctx.getSource(),
+                                                StringArgumentType.getString(ctx, "player"), false))))
+                        .then(Commands.literal("list")
+                                .executes(ctx -> trustList(ctx.getSource()))))
+                .then(Commands.literal("build").requires(s -> s.hasPermission(2))
+                        .then(Commands.argument("def", StringArgumentType.string()).suggests(SUGGEST_DEFS)
+                                .executes(ctx -> build(ctx.getSource(),
+                                        StringArgumentType.getString(ctx, "def"), 1, false))
+                                .then(Commands.argument("tier", IntegerArgumentType.integer(1))
+                                        .executes(ctx -> build(ctx.getSource(),
+                                                StringArgumentType.getString(ctx, "def"),
+                                                IntegerArgumentType.getInteger(ctx, "tier"), false))
+                                        .then(Commands.argument("free", BoolArgumentType.bool())
+                                                .executes(ctx -> build(ctx.getSource(),
+                                                        StringArgumentType.getString(ctx, "def"),
+                                                        IntegerArgumentType.getInteger(ctx, "tier"),
+                                                        BoolArgumentType.getBool(ctx, "free")))))))
+                .then(Commands.literal("upgrade").requires(s -> s.hasPermission(2))
+                        .then(Commands.argument("def", StringArgumentType.string()).suggests(SUGGEST_DEFS)
+                                .executes(ctx -> upgrade(ctx.getSource(), StringArgumentType.getString(ctx, "def")))))
+                .then(Commands.literal("dismantle").requires(s -> s.hasPermission(2))
+                        .then(Commands.argument("def", StringArgumentType.string()).suggests(SUGGEST_DEFS)
+                                .executes(ctx -> dismantle(ctx.getSource(), StringArgumentType.getString(ctx, "def")))))
+                .then(Commands.literal("finishbuild").requires(s -> s.hasPermission(2))
+                        .executes(ctx -> finishBuild(ctx.getSource())))
+                .then(Commands.literal("debugorigin").requires(s -> s.hasPermission(2))
+                        .then(Commands.argument("def", StringArgumentType.string()).suggests(SUGGEST_DEFS)
+                                .executes(ctx -> debugOrigin(ctx.getSource(), StringArgumentType.getString(ctx, "def")))))
+                .then(Commands.literal("dissolve").requires(s -> s.hasPermission(2))
+                        .executes(ctx -> dissolve(ctx.getSource())))
+                .then(Commands.literal("withdraw").requires(s -> s.hasPermission(2))
+                        .then(Commands.argument("item", StringArgumentType.string())
+                                .executes(ctx -> withdraw(ctx.getSource(), StringArgumentType.getString(ctx, "item"), Long.MAX_VALUE))
+                                .then(Commands.argument("count", LongArgumentType.longArg(1))
+                                        .executes(ctx -> withdraw(ctx.getSource(), StringArgumentType.getString(ctx, "item"),
+                                                LongArgumentType.getLong(ctx, "count"))))));
         dispatcher.register(root);
     }
 
@@ -178,6 +239,7 @@ public final class ColonyCommands {
             case ACTIVE -> "运转中";
             case DAMAGED -> "受损";
             case UNDER_REPAIR -> "维修中";
+            case DISMANTLING -> "拆除中";
         };
     }
 
@@ -294,6 +356,248 @@ public final class ColonyCommands {
         }
         source.sendFailure(Component.literal("该殖民地没有 " + defId + " 建筑。"));
         return 0;
+    }
+
+    // —— chunk / trust / build（M6.2；与 GUI 按钮同源 ConstructionService/ColonyManager） ——
+
+    private static int chunkPrice(CommandSourceStack source) {
+        Colony colony = resolveColony(source);
+        if (colony == null) {
+            source.sendFailure(Component.literal("没有目标殖民地。"));
+            return 0;
+        }
+        long price = ColonyManager.nextChunkPrice(colony);
+        source.sendSuccess(() -> Component.literal(String.format(
+                "当前持有 %d 块，下一块价格 %d 信用点（第 N 块 = 基础价 %d × N）。购地冷却 %d 秒。",
+                colony.territorySize(), price, Config.CHUNK_PRICE_BASE.get(),
+                Config.PURCHASE_COOLDOWN_SECONDS.get())), false);
+        return 1;
+    }
+
+    private static int chunkBuy(CommandSourceStack source, int cx, int cz) {
+        ServerLevel level = source.getLevel();
+        Colony colony = resolveColony(source);
+        if (colony == null) {
+            source.sendFailure(Component.literal("没有目标殖民地。"));
+            return 0;
+        }
+        var result = ColonyManager.buyChunk(level, colony, cx, cz);
+        if (result.success()) {
+            source.sendSuccess(() -> Component.literal(result.message()), true);
+            return 1;
+        }
+        source.sendFailure(Component.literal(result.message()));
+        return 0;
+    }
+
+    private static int chunkAbandon(CommandSourceStack source, int cx, int cz) {
+        ServerLevel level = source.getLevel();
+        Colony colony = resolveColony(source);
+        if (colony == null) {
+            source.sendFailure(Component.literal("没有目标殖民地。"));
+            return 0;
+        }
+        var result = ColonyManager.abandonChunk(level, colony, cx, cz);
+        if (result.success()) {
+            source.sendSuccess(() -> Component.literal(result.message()), true);
+            return 1;
+        }
+        source.sendFailure(Component.literal(result.message()));
+        return 0;
+    }
+
+    private static int trust(CommandSourceStack source, String playerName, boolean add) {
+        Colony colony = resolveColony(source);
+        if (colony == null) {
+            source.sendFailure(Component.literal("没有目标殖民地。"));
+            return 0;
+        }
+        var profile = source.getServer().getProfileCache().get(playerName);
+        if (profile.isEmpty()) {
+            source.sendFailure(Component.literal("找不到玩家：" + playerName));
+            return 0;
+        }
+        UUID uuid = profile.get().getId();
+        if (add) {
+            colony.setTrust(uuid, Colony.Trust.TRUSTED);
+            source.sendSuccess(() -> Component.literal(playerName + " 已授予「可信」权限（可开建筑 GUI 收货）。"), true);
+        } else {
+            colony.setTrust(uuid, null);
+            source.sendSuccess(() -> Component.literal(playerName + " 的信任授权已移除。"), true);
+        }
+        return 1;
+    }
+
+    private static int trustList(CommandSourceStack source) {
+        Colony colony = resolveColony(source);
+        if (colony == null) {
+            source.sendFailure(Component.literal("没有目标殖民地。"));
+            return 0;
+        }
+        if (colony.trustEntries().isEmpty()) {
+            source.sendSuccess(() -> Component.literal("信任名单为空（访客默认可通行与贸易站交互）。"), false);
+            return 1;
+        }
+        StringBuilder sb = new StringBuilder("信任名单（可信）:");
+        colony.trustEntries().forEach((uuid, level) -> {
+            var p = source.getServer().getPlayerList().getPlayer(uuid);
+            sb.append(' ').append(p != null ? p.getName().getString() : uuid).append("(可信)");
+        });
+        source.sendSuccess(() -> Component.literal(sb.toString()), false);
+        return 1;
+    }
+
+    private static int build(CommandSourceStack source, String defId, int tier, boolean free) {
+        ServerLevel level = source.getLevel();
+        Colony colony = resolveColony(source);
+        if (colony == null) {
+            source.sendFailure(Component.literal("没有目标殖民地。"));
+            return 0;
+        }
+        BlockPos base;
+        if (source.getEntity() instanceof ServerPlayer player) {
+            base = player.blockPosition();
+        } else {
+            base = level.getSharedSpawnPos();
+        }
+        BuildingDefinition def = BuildingDefinitions.get(defId).orElse(null);
+        if (def == null) {
+            source.sendFailure(Component.literal("未知建筑定义：" + defId));
+            return 0;
+        }
+        BlockPos origin = ConstructionService.findClearOrigin(level, base,
+                def.footprintW(), def.footprintH(), def.footprintD());
+        var result = ConstructionService.placeFoundation(level,
+                source.getEntity() instanceof ServerPlayer p ? p : null, origin, defId, tier, free);
+        if (result.success()) {
+            source.sendSuccess(() -> Component.literal(result.message() + " 位置：" + origin.toShortString()), true);
+            return 1;
+        }
+        source.sendFailure(Component.literal(result.message()));
+        return 0;
+    }
+
+    private static int upgrade(CommandSourceStack source, String defId) {
+        ServerLevel level = source.getLevel();
+        Colony colony = resolveColony(source);
+        if (colony == null) {
+            source.sendFailure(Component.literal("没有目标殖民地。"));
+            return 0;
+        }
+        BuildingInstance building = colony.getBuildings().stream()
+                .filter(b -> b.definitionId().equals(defId)).findFirst().orElse(null);
+        if (building == null) {
+            source.sendFailure(Component.literal("该殖民地没有 " + defId + " 建筑。"));
+            return 0;
+        }
+        ServerPlayer player = source.getEntity() instanceof ServerPlayer p ? p : null;
+        var result = ConstructionService.tryUpgrade(level, colony, building, player);
+        if (result.success()) {
+            source.sendSuccess(() -> Component.literal(result.message()), true);
+            return 1;
+        }
+        source.sendFailure(Component.literal(result.message()));
+        return 0;
+    }
+
+    private static int dismantle(CommandSourceStack source, String defId) {
+        ServerLevel level = source.getLevel();
+        Colony colony = resolveColony(source);
+        if (colony == null) {
+            source.sendFailure(Component.literal("没有目标殖民地。"));
+            return 0;
+        }
+        BuildingInstance building = colony.getBuildings().stream()
+                .filter(b -> b.definitionId().equals(defId)).findFirst().orElse(null);
+        if (building == null) {
+            source.sendFailure(Component.literal("该殖民地没有 " + defId + " 建筑。"));
+            return 0;
+        }
+        ServerPlayer player = source.getEntity() instanceof ServerPlayer p ? p : null;
+        var result = ConstructionService.tryDismantle(level, colony, building, player);
+        if (result.success()) {
+            source.sendSuccess(() -> Component.literal(result.message()), true);
+            return 1;
+        }
+        source.sendFailure(Component.literal(result.message()));
+        return 0;
+    }
+
+    /** OP 调试：将全部施工/拆除倒计时置为到点（冒烟不等待真实时长；到点后由核心方块 tick 完成成形）。 */
+    private static int finishBuild(CommandSourceStack source) {
+        Colony colony = resolveColony(source);
+        if (colony == null) {
+            source.sendFailure(Component.literal("没有目标殖民地。"));
+            return 0;
+        }
+        long now = System.currentTimeMillis();
+        final int[] count = {0};
+        for (BuildingInstance b : colony.getBuildings()) {
+            if (b.status() == BuildingInstance.Status.CONSTRUCTION) {
+                b.setBuildEndWall(now);
+                count[0]++;
+            } else if (b.status() == BuildingInstance.Status.DISMANTLING) {
+                b.setDismantleEndWall(now);
+                count[0]++;
+            }
+        }
+        source.sendSuccess(() -> Component.literal("已将 " + count[0] + " 个施工/拆除倒计时置为到点（区块加载时立即成形/拆除）。"), true);
+        return 1;
+    }
+
+    /** OP 调试：打印 build 命令将选中的放置点与重叠判定明细。 */
+    private static int debugOrigin(CommandSourceStack source, String defId) {
+        ServerLevel level = source.getLevel();
+        Colony colony = resolveColony(source);
+        if (colony == null) {
+            return 0;
+        }
+        BuildingDefinition def = BuildingDefinitions.get(defId).orElse(null);
+        if (def == null) {
+            return 0;
+        }
+        BlockPos base = source.getEntity() instanceof ServerPlayer p
+                ? p.blockPosition() : level.getSharedSpawnPos();
+        BlockPos origin = ConstructionService.findClearOrigin(level, base,
+                def.footprintW(), def.footprintH(), def.footprintD());
+        StringBuilder sb = new StringBuilder("base=" + base.toShortString() + " chosen=" + origin.toShortString() + "\n");
+
+        for (BuildingInstance b : colony.getBuildings()) {
+            sb.append(" · ").append(b.definitionId()).append(" origin=")
+              .append(b.origin() < 0 ? "-1" : net.minecraft.core.BlockPos.of(b.origin()).toShortString())
+              .append(" fp=").append(b.footprintW()).append('x').append(b.footprintH()).append('x').append(b.footprintD()).append("\n");
+
+        }
+        String out = sb.toString();
+        source.sendSuccess(() -> Component.literal(out), false);
+        return 1;
+    }
+
+    /** OP：解散殖民地（与 GUI「解散」按钮同源；拆完建筑为前置）。 */
+    private static int dissolve(CommandSourceStack source) {
+        Colony colony = resolveColony(source);
+        if (colony == null) {
+            source.sendFailure(Component.literal("没有目标殖民地。"));
+            return 0;
+        }
+        var result = ColonyManager.dissolve(source.getLevel(), colony);
+        if (result.success()) {
+            source.sendSuccess(() -> Component.literal(result.message()), true);
+            return 1;
+        }
+        source.sendFailure(Component.literal(result.message()));
+        return 0;
+    }
+
+    private static int withdraw(CommandSourceStack source, String item, long count) {
+        Colony colony = resolveColony(source);
+        if (!(source.getEntity() instanceof ServerPlayer player)) {
+            source.sendFailure(Component.literal("该命令需要玩家执行。"));
+            return 0;
+        }
+        long moved = ConstructionService.moveBufferToPlayer(colony, item, count, player);
+        source.sendSuccess(() -> Component.literal("已取出 " + item + " ×" + moved + " 到背包。"), false);
+        return 1;
     }
 
     // —— helpers ——

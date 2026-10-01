@@ -1,4 +1,17 @@
 {
+  "itemGroup.pioneer_colony": "殖民地经营",
+  "block.pioneer_colony.colony_core": "建筑地基（逻辑核心）",
+  "block.pioneer_colony.construction_barrier": "施工围挡",
+  "item.pioneer_colony.foundation_warehouse": "殖民地仓库·地基",
+  "item.pioneer_colony.foundation_residence": "住宅·地基",
+  "item.pioneer_colony.foundation_canteen": "食堂·地基",
+  "item.pioneer_colony.foundation_farm": "农场·地基",
+  "item.pioneer_colony.foundation_smelter": "冶炼舱·地基",
+  "item.pioneer_colony.foundation_guard_post": "守卫哨·地基",
+  "item.pioneer_colony.foundation_trade_station": "贸易站·地基",
+  "item.pioneer_colony.foundation_research_institute": "研究院·地基",
+  "item.pioneer_colony.foundation_boiler_room": "锅炉房·地基",
+
   "commands.pioneer_colony.created": "殖民地「%s」创建成功！获赠启动资金 %s 信用点，初始人口 %s，已免费认领总部周围 3×3 领地。",
   "commands.pioneer_colony.create.dimension": "创建失败：环境不适合殖民（殖民地仅限主世界）。",
   "commands.pioneer_colony.create.limit": "创建失败：已达殖民地数量上限（%s）。",

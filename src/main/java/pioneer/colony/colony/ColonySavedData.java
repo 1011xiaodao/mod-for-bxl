@@ -22,6 +22,8 @@ public final class ColonySavedData extends SavedData {
 
     private final Map<UUID, Colony> colonies = new LinkedHashMap<>();
     private final Map<UUID, UUID> colonyByOwner = new HashMap<>();
+    /** 解散退款的待发账户（信用点无实体形态：随该玩家下次创建殖民地发放）。 */
+    private final Map<UUID, Long> pendingRefunds = new HashMap<>();
 
     public static ColonySavedData get(MinecraftServer server) {
         return server.overworld().getDataStorage().computeIfAbsent(
@@ -54,6 +56,28 @@ public final class ColonySavedData extends SavedData {
         return (int) colonies.values().stream().filter(c -> c.owner().equals(player)).count();
     }
 
+    public void remove(UUID colonyId) {
+        Colony colony = colonies.remove(colonyId);
+        if (colony != null) {
+            colonyByOwner.remove(colony.owner());
+            setDirty();
+        }
+    }
+
+    public void addRefund(UUID player, long amount) {
+        pendingRefunds.merge(player, amount, Long::sum);
+        setDirty();
+    }
+
+    /** 取走待发退款（建殖民地时）。 */
+    public long takeRefund(UUID player) {
+        Long value = pendingRefunds.remove(player);
+        if (value != null) {
+            setDirty();
+        }
+        return value == null ? 0L : value;
+    }
+
     @Override
     public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
         ListTag list = new ListTag();
@@ -61,6 +85,14 @@ public final class ColonySavedData extends SavedData {
             list.add(colony.save());
         }
         tag.put("colonies", list);
+        ListTag refundList = new ListTag();
+        for (Map.Entry<UUID, Long> e : pendingRefunds.entrySet()) {
+            CompoundTag t = new CompoundTag();
+            t.putUUID("player", e.getKey());
+            t.putLong("amount", e.getValue());
+            refundList.add(t);
+        }
+        tag.put("pendingRefunds", refundList);
         return tag;
     }
 
@@ -71,6 +103,11 @@ public final class ColonySavedData extends SavedData {
             Colony colony = Colony.load(list.getCompound(i));
             data.colonies.put(colony.uuid(), colony);
             data.colonyByOwner.put(colony.owner(), colony.uuid());
+        }
+        ListTag refundList = tag.getList("pendingRefunds", Tag.TAG_COMPOUND);
+        for (int i = 0; i < refundList.size(); i++) {
+            CompoundTag t = refundList.getCompound(i);
+            data.pendingRefunds.put(t.getUUID("player"), t.getLong("amount"));
         }
         return data;
     }

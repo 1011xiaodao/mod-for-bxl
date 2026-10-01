@@ -194,6 +194,7 @@ public final class EconomyTicker {
             double outputPerMin = def.tierOutputPerMin(building.tier());
             if (outputItem != null && outputPerMin > 0) {
                 double inputRatio = inputRatio(colony, def.inputPerMin(), minutes);
+                building.setInputShortage(inputRatio < 1.0);
                 double baseEfficiency = fillRate * globalBonus * maintenanceFactor * inputRatio;
                 if (baseEfficiency > 0) {
                     consumeProportional(colony, def.inputPerMin(), minutes, baseEfficiency, result);
