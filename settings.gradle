@@ -1,8 +1,11 @@
 pluginManagement {
     repositories {
+        // NeoForge 官方源——本网络 Java TLS 直连被重置，经本地 curl 缓存反代转发
+        // （先启动 tools/neoforged_maven_proxy.py，再执行构建；详见 tools/README.md）
         maven {
-            name = 'NeoForge 官方源'
-            url = 'https://maven.neoforged.net/releases'
+            name = 'NeoForge 官方源（本地反代）'
+            url = 'http://127.0.0.1:8528/releases'
+            allowInsecureProtocol = true
         }
         // Plugin Portal 国内代理（gradlePluginPortal 本网络不可达，用阿里云镜像代替；MDG 依赖的 idea-ext 等经此解析）
         maven {
@@ -15,11 +18,27 @@ pluginManagement {
 rootProject.name = 'pioneer_colony'
 
 dependencyResolutionManagement {
+    // MDG 插件默认会向项目添加 maven.neoforged.net 仓库（本网络 Java TLS 直连被重置），
+    // PREFER_SETTINGS 强制全部解析走下方声明的仓库（neoforged 经本地反代）
+    repositoriesMode = org.gradle.api.initialization.resolve.RepositoriesMode.PREFER_SETTINGS
     repositories {
-        // NeoForge 官方源（国内链路间歇不稳，配合 gradle.properties 的重试参数使用）
+        // NeoForge 官方源——本网络 Java TLS 直连被重置，经本地 curl 缓存反代转发
+        // （先启动 tools/neoforged_maven_proxy.py，再执行构建；详见 tools/README.md）
         maven {
-            name = 'NeoForge'
-            url = 'https://maven.neoforged.net/releases'
+            name = 'NeoForge 官方源（本地反代）'
+            url = 'http://127.0.0.1:8528/releases'
+            allowInsecureProtocol = true
+        }
+        // Mojang 版本元数据（MDG 默认走 maven.neoforged.net/mojang-meta，同样经反代）
+        maven {
+            name = 'Mojang Meta（本地反代）'
+            url = 'http://127.0.0.1:8528/mojang-meta'
+            allowInsecureProtocol = true
+        }
+        // Mojang 库（Java 可直连）
+        maven {
+            name = 'Mojang Minecraft Libraries'
+            url = 'https://libraries.minecraft.net/'
         }
         // BMCLAPI 国内镜像兜底（镜像了 net.neoforged 群组的构件）
         maven {

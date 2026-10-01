@@ -20,6 +20,11 @@ java {
 neoForge {
     version = project.neo_version
 
+    neoFormRuntime {
+        // 默认指向 maven.neoforged.net/mojang-meta（本网络 Java 直连被重置），改回 Mojang 官方
+        launcherManifestUrl = 'https://piston-meta.mojang.com/mc/game/version_manifest_v2.json'
+    }
+
     runs {
         client {
             client()
