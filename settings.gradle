@@ -1,0 +1,31 @@
+pluginManagement {
+    repositories {
+        maven {
+            name = 'NeoForge 官方源'
+            url = 'https://maven.neoforged.net/releases'
+        }
+        // Plugin Portal 国内代理（gradlePluginPortal 本网络不可达，用阿里云镜像代替；MDG 依赖的 idea-ext 等经此解析）
+        maven {
+            name = '阿里云插件镜像'
+            url = 'https://maven.aliyun.com/repository/gradle-plugin'
+        }
+    }
+}
+
+rootProject.name = 'pioneer_colony'
+
+dependencyResolutionManagement {
+    repositories {
+        // NeoForge 官方源（国内链路间歇不稳，配合 gradle.properties 的重试参数使用）
+        maven {
+            name = 'NeoForge'
+            url = 'https://maven.neoforged.net/releases'
+        }
+        // BMCLAPI 国内镜像兜底（镜像了 net.neoforged 群组的构件）
+        maven {
+            name = 'BMCLAPI'
+            url = 'https://bmclapi2.bangbang93.com/maven/'
+        }
+        mavenCentral()
+    }
+}

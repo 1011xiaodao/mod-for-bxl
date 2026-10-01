@@ -1,0 +1,38 @@
+plugins {
+    id 'java-library'
+    id 'idea'
+    id 'net.neoforged.moddev' version '2.0.146'
+}
+
+version = '0.6.1'
+group = 'pioneer'
+
+base {
+    archivesName = 'pioneer_colony'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+neoForge {
+    version = project.neo_version
+
+    runs {
+        client {
+            client()
+        }
+        server {
+            server()
+            programArgument '--nogui'
+        }
+    }
+
+    mods {
+        pioneer_colony {
+            sourceSet sourceSets.main
+        }
+    }
+}

@@ -1,0 +1,26 @@
+modLoader="javafml"
+loaderVersion="[4,)"
+license="All Rights Reserved"
+
+[[mods]]
+modId="pioneer_colony"
+version="0.6.1"
+displayName="殖民地经营 Colony Sim"
+authors="pioneer 项目组"
+description='''
+策略经营式殖民地模拟：领地、经济、建筑、研究通道、袭击与商贸。「星球殖民」整合包四部曲·第一部。
+'''
+
+[[dependencies.pioneer_colony]]
+    modId="neoforge"
+    type="required"
+    versionRange="[21.1.0,)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.pioneer_colony]]
+    modId="minecraft"
+    type="required"
+    versionRange="[1.21.1,1.22)"
+    ordering="NONE"
+    side="BOTH"
