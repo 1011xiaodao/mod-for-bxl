@@ -1,0 +1,19 @@
+{
+  "_note": "占位数值，待项目主调整",
+  "id": "residence",
+  "name": "住宅",
+  "max_tier": 5,
+  "build_seconds_per_tier": [300, 450, 600, 900, 1200],
+  "cost_per_tier": [
+    [{"item": "minecraft:oak_planks", "count": 16}],
+    [{"item": "minecraft:oak_planks", "count": 32}],
+    [{"item": "minecraft:oak_planks", "count": 48}],
+    [{"item": "minecraft:iron_ingot", "count": 16}],
+    [{"item": "minecraft:iron_ingot", "count": 32}]
+  ],
+  "input_per_min": [],
+  "output_per_min_per_tier": [0, 0, 0, 0, 0],
+  "worker_slots_per_tier": [0, 0, 0, 0, 0],
+  "resident_slots_per_tier": [2, 4, 6, 8, 10],
+  "maintenance_per_hour": []
+}

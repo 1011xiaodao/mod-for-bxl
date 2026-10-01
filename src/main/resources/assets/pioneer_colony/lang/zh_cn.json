@@ -1,0 +1,15 @@
+{
+  "commands.pioneer_colony.created": "殖民地「%s」创建成功！获赠启动资金 %s 信用点，初始人口 %s，已免费认领总部周围 3×3 领地。",
+  "commands.pioneer_colony.create.dimension": "创建失败：环境不适合殖民（殖民地仅限主世界）。",
+  "commands.pioneer_colony.create.limit": "创建失败：已达殖民地数量上限（%s）。",
+  "commands.pioneer_colony.info.none": "没有可查看的殖民地（玩家：/colony create <名称>）。",
+  "commands.pioneer_colony.list.empty": "当前存档没有殖民地。",
+  "commands.pioneer_colony.tick.done": "已强制结算 %s 个殖民地，主线程耗时 %s ms（会话峰值 %s ms）。",
+  "commands.pioneer_colony.backdate.done": "已将最后结算时间回拨 %s 分钟，下次结算将触发离线补算（上限 %s 小时）。可用 /colony tick 立即触发。",
+  "commands.pioneer_colony.credits.done": "信用点：%s → %s。",
+  "commands.pioneer_colony.building.added": "建筑「%s」已添加至 %s 级（调试通道，未扣料；真实施工 M6.2 接入）。",
+  "commands.pioneer_colony.building.unknown": "未知建筑定义：%s",
+  "commands.pioneer_colony.building.removed": "建筑 %s 已移除（调试通道，不返还）。",
+  "commands.pioneer_colony.building.absent": "该殖民地没有 %s 建筑。",
+  "commands.pioneer_colony.no_colony": "没有目标殖民地。"
+}

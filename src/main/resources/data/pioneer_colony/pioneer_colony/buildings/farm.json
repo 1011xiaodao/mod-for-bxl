@@ -1,0 +1,20 @@
+{
+  "_note": "占位数值，待项目主调整",
+  "id": "farm",
+  "name": "农场",
+  "max_tier": 5,
+  "build_seconds_per_tier": [300, 450, 600, 900, 1200],
+  "cost_per_tier": [
+    [{"item": "minecraft:oak_planks", "count": 12}],
+    [{"item": "minecraft:oak_planks", "count": 24}],
+    [{"item": "minecraft:iron_ingot", "count": 12}],
+    [{"item": "minecraft:iron_ingot", "count": 20}],
+    [{"item": "minecraft:iron_ingot", "count": 32}]
+  ],
+  "input_per_min": [],
+  "output_item": "minecraft:wheat",
+  "output_per_min_per_tier": [8, 12, 16, 22, 28],
+  "worker_slots_per_tier": [1, 1, 2, 2, 3],
+  "profession": "farmer",
+  "maintenance_per_hour": []
+}

@@ -1,0 +1,19 @@
+{
+  "_note": "占位数值，待项目主调整",
+  "id": "hq",
+  "name": "总部（市政厅）",
+  "max_tier": 5,
+  "build_seconds_per_tier": [600, 900, 1200, 1800, 2400],
+  "cost_per_tier": [
+    [{"item": "minecraft:iron_ingot", "count": 16}],
+    [{"item": "minecraft:iron_ingot", "count": 32}],
+    [{"item": "minecraft:copper_ingot", "count": 32}],
+    [{"item": "minecraft:gold_ingot", "count": 24}],
+    [{"item": "minecraft:diamond", "count": 16}]
+  ],
+  "input_per_min": [],
+  "output_per_min_per_tier": [0, 0, 0, 0, 0],
+  "worker_slots_per_tier": [0, 0, 0, 0, 0],
+  "resident_slots_per_tier": [5, 8, 12, 16, 20],
+  "maintenance_per_hour": []
+}
