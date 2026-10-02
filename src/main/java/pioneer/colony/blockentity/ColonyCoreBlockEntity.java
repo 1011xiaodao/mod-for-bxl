@@ -125,6 +125,8 @@ public class ColonyCoreBlockEntity extends BlockEntity implements MenuProvider {
             ConstructionService.completeConstruction(serverLevel, colony, building, be);
         } else if (building.status() == BuildingInstance.Status.DISMANTLING && now >= building.getDismantleEndWall()) {
             ConstructionService.completeDismantle(serverLevel, colony, building, be);
+        } else if (building.status() == BuildingInstance.Status.UNDER_REPAIR && now >= building.getBuildEndWall()) {
+            ConstructionService.completeRepair(serverLevel, colony, building, be);
         } else if (building.status() == BuildingInstance.Status.CONSTRUCTION
                 && level.getGameTime() % 50 == 0) {
             // 施工期占位表现：敲击音效 + 尘土粒子（位置化，范围内随机点）

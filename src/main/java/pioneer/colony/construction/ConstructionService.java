@@ -1,5 +1,6 @@
 package pioneer.colony.construction;
 
+import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -203,6 +204,61 @@ public final class ConstructionService {
         markDirty(level);
         level.playSound(null, origin, SoundEvents.ITEM_FRAME_BREAK, SoundSource.BLOCKS, 0.8F, 0.7F);
         PioneerColony.LOGGER.info("[殖民地经营] 建筑[{}]拆除完成：{}", colony.getName(),
+                def == null ? building.definitionId() : def.name());
+    }
+
+    // —— 维修（M6.4：建筑受损 / 总部停摆） ——
+
+    /**
+     * 维修：DAMAGED 建筑 → UNDER_REPAIR；总部停摆（STOPPED）→ 同流程，完成后恢复满效。
+     * 费用 = 当前等级建造成本 × repairCostPercent + 一次性建设费；倒计时 = 施工时长 × repairFactor。
+     */
+    public static OpResult tryRepair(ServerLevel level, Colony colony, BuildingInstance building, ServerPlayer player) {
+        BuildingDefinition def = BuildingDefinitions.get(building.definitionId()).orElse(null);
+        if (def == null) {
+            return OpResult.fail("未知建筑定义：" + building.definitionId());
+        }
+        boolean isHq = "hq".equals(building.definitionId());
+        boolean hqStopped = isHq && colony.getHqState() == Colony.HqState.STOPPED;
+        if (building.status() != BuildingInstance.Status.DAMAGED && !hqStopped) {
+            return OpResult.fail("建筑当前无需维修。");
+        }
+        // 材料 = 等级成本 × 百分比
+        List<ItemCost> cost = new ArrayList<>();
+        for (ItemCost c : def.tierCost(building.tier())) {
+            cost.add(new ItemCost(c.item(), Math.max(1, c.count() * Config.REPAIR_COST_PERCENT.get() / 100)));
+        }
+        OpResult pay = payCost(level, colony, player, cost, feeFor(def, building.tier()), false);
+        if (!pay.success()) {
+            return pay;
+        }
+        building.setStatus(BuildingInstance.Status.UNDER_REPAIR);
+        building.setBuildEndWall(System.currentTimeMillis()
+                + def.tierBuildSeconds(building.tier()) * Config.REPAIR_BUILD_SECONDS_FACTOR_PERCENT.get() / 100L * 1000L);
+        markDirty(level);
+        if (building.hasOrigin()) {
+            placeBarriers(level, BlockPos.of(building.origin()), def.footprintW(), def.footprintD());
+        }
+        if (hqStopped) {
+            colony.setHqState(Colony.HqState.NORMAL); // 修复完成后恢复；期间建筑态=UNDER_REPAIR 无产出
+            colony.setHqHealth(Config.HQ_MAX_HEALTH.get());
+            markDirty(level);
+        }
+        return OpResult.ok(def.name() + " 维修中（" + def.tierBuildSeconds(building.tier())
+                * Config.REPAIR_BUILD_SECONDS_FACTOR_PERCENT.get() / 100L + " 秒），完成后恢复满效。");
+    }
+
+    /** 维修完成（核心方块 tick 驱动）。 */
+    public static void completeRepair(ServerLevel level, Colony colony, BuildingInstance building,
+                                      ColonyCoreBlockEntity core) {
+        BuildingDefinition def = BuildingDefinitions.get(building.definitionId()).orElse(null);
+        building.setStatus(BuildingInstance.Status.ACTIVE);
+        markDirty(level);
+        if (def != null && building.hasOrigin()) {
+            removeBarriers(level, BlockPos.of(building.origin()), def.footprintW(), def.footprintD());
+        }
+        level.playSound(null, core.getBlockPos(), SoundEvents.NOTE_BLOCK_BELL.value(), SoundSource.BLOCKS, 0.8F, 1.2F);
+        PioneerColony.LOGGER.info("[殖民地经营] 建筑[{}]维修完成：{}", colony.getName(),
                 def == null ? building.definitionId() : def.name());
     }
 

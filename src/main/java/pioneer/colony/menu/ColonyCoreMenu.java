@@ -33,6 +33,7 @@ public class ColonyCoreMenu extends AbstractContainerMenu {
     public static final int BTN_WITHDRAW = 0;
     public static final int BTN_UPGRADE = 1;
     public static final int BTN_DISMANTLE = 2;
+    public static final int BTN_REPAIR = 3;
     public static final int BTN_DEPOSIT_ALL = 5;
     public static final int BTN_WITHDRAW_ALL = 6;
     public static final int BTN_PAGE_OVERVIEW = 10;
@@ -67,7 +68,11 @@ public class ColonyCoreMenu extends AbstractContainerMenu {
     public static final int SLOT_IS_HQ = 16;
     public static final int SLOT_IS_WAREHOUSE = 17;
     public static final int SLOT_RESEARCH_AVAILABLE = 18;
-    public static final int SLOT_MAP_BASE = 20; // + offset 0..120
+    public static final int SLOT_THREAT = 19;
+    public static final int SLOT_RAID_COUNTDOWN = 20;
+    public static final int SLOT_HQ_HEALTH = 21;
+    public static final int SLOT_CAN_REPAIR = 22;
+    public static final int SLOT_MAP_BASE = 30; // + offset 0..120
     public static final int SLOT_COUNT = SLOT_MAP_BASE + MAP_SIZE * MAP_SIZE;
 
     // 地图状态值
@@ -197,6 +202,13 @@ public class ColonyCoreMenu extends AbstractContainerMenu {
         setSlot(SLOT_CONFIRMED, (dissolveArmed || now - dismantleArmWall < 30_000) ? 1 : 0);
         setSlot(SLOT_IS_HQ, "hq".equals(building.definitionId()) ? 1 : 0);
         setSlot(SLOT_IS_WAREHOUSE, "warehouse".equals(building.definitionId()) ? 1 : 0);
+        setSlot(SLOT_THREAT, (int) Math.min(Integer.MAX_VALUE, colony.getThreatValue()));
+        setSlot(SLOT_RAID_COUNTDOWN, raidCountdownSeconds(server, colony));
+        setSlot(SLOT_HQ_HEALTH, (int) (colony.getHqHealth() / Config.HQ_MAX_HEALTH.get() * 100));
+        setSlot(SLOT_CAN_REPAIR,
+                building.status() == BuildingInstance.Status.DAMAGED
+                        || ("hq".equals(building.definitionId())
+                                && colony.getHqState() == Colony.HqState.STOPPED) ? 1 : 0);
         if (data[SLOT_PAGE] == 1) {
             refreshMapStates();
         }
@@ -281,6 +293,11 @@ public class ColonyCoreMenu extends AbstractContainerMenu {
         }
     }
 
+    private int raidCountdownSeconds(MinecraftServer server, Colony colony) {
+        // RaidManager 状态查询（反射到静态 API 太绕，直接读其公开调试面）
+        return pioneer.colony.raid.RaidManager.raidCountdownSeconds(server, colony);
+    }
+
     // —— 交互 ——
 
     @Override
@@ -297,6 +314,11 @@ public class ColonyCoreMenu extends AbstractContainerMenu {
             feedback(sp, moved < 0 ? "该建筑无产出物可收取。"
                     : moved == 0 ? "没有可收取的产出（或背包已满）。"
                     : "已收取产出 ×" + moved);
+            return true;
+        }
+        if (id == BTN_REPAIR) {
+            var result = pioneer.colony.construction.ConstructionService.tryRepair(level, colony, building, sp);
+            feedback(sp, result.message());
             return true;
         }
         if (id == BTN_UPGRADE) {

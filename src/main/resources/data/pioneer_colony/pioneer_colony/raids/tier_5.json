@@ -1,0 +1,11 @@
+{
+  "_note": "占位数值，待项目主定稿",
+  "tier": 5,
+  "waves": [
+    {"entity": "minecraft:zombie", "count": 10, "delay_seconds": 0, "equipment": ["minecraft:iron_sword", "minecraft:iron_helmet"]},
+    {"entity": "minecraft:skeleton", "count": 8, "delay_seconds": 20},
+    {"entity": "minecraft:zombie", "count": 8, "delay_seconds": 25, "equipment": ["minecraft:diamond_sword", "minecraft:iron_chestplate"]}
+  ],
+  "loot": [{"item": "minecraft:diamond", "count": 5}, {"item": "minecraft:emerald", "count": 10}],
+  "hq_damage_per_hit": 4.0
+}

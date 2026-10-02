@@ -1,0 +1,9 @@
+{
+  "_note": "占位数值，待项目主定稿（原版怪物+装备缩放 v1）",
+  "tier": 1,
+  "waves": [
+    {"entity": "minecraft:zombie", "count": 4, "delay_seconds": 0}
+  ],
+  "loot": [{"item": "minecraft:iron_ingot", "count": 3}],
+  "hq_damage_per_hit": 1.5
+}

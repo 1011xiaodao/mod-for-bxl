@@ -1,0 +1,11 @@
+{
+  "_note": "占位数值，待项目主定稿（装备缩放示例：铁剑/铁盔）",
+  "tier": 4,
+  "waves": [
+    {"entity": "minecraft:zombie", "count": 8, "delay_seconds": 0},
+    {"entity": "minecraft:skeleton", "count": 6, "delay_seconds": 20},
+    {"entity": "minecraft:zombie", "count": 4, "delay_seconds": 25, "equipment": ["minecraft:iron_sword", "minecraft:iron_helmet"]}
+  ],
+  "loot": [{"item": "minecraft:gold_ingot", "count": 6}, {"item": "minecraft:diamond", "count": 2}],
+  "hq_damage_per_hit": 3.0
+}

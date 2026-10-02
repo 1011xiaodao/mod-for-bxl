@@ -45,6 +45,9 @@ public final class EconomyTicker {
         long startNanos = System.nanoTime();
         for (Colony colony : data.all()) {
             settleColony(colony, now, force);
+            // 威胁值收敛 + 档位触发（06 §6，随经济 tick 同频）
+            pioneer.colony.raid.RaidManager.computeThreat(colony);
+            pioneer.colony.raid.RaidManager.checkTrigger(server, colony);
         }
         double durationMs = (System.nanoTime() - startNanos) / 1_000_000.0;
         lastDurationMs = durationMs;
@@ -162,7 +165,8 @@ public final class EconomyTicker {
                 result.events.add("未知建筑定义：" + building.definitionId() + "（定义被删除？）");
                 continue;
             }
-            if (building.status() != BuildingInstance.Status.ACTIVE) {
+            boolean damaged = building.status() == BuildingInstance.Status.DAMAGED;
+            if (building.status() != BuildingInstance.Status.ACTIVE && !damaged) {
                 continue;
             }
             // 岗位填充率（人口自动分配；GUI 调配 M6.2 起）
@@ -186,8 +190,9 @@ public final class EconomyTicker {
             }
             double maintenanceFactor = building.isMaintenanceSatisfied()
                     ? 1.0 : Config.MAINTENANCE_HALF_EFFICIENCY_FACTOR.get();
-            // 全局加成 = 1 + colony 通道研究效果（标签命中，M6.3）
-            double globalBonus = 1.0 + colony.productionBonusFor(def.tags());
+            // 全局加成 = 1 + colony 通道研究效果（标签命中，M6.3）；受损状态效率 50%（M6.4）
+            double globalBonus = (1.0 + colony.productionBonusFor(def.tags()))
+                    * (damaged ? Config.DAMAGED_EFFICIENCY_FACTOR.get() : 1.0);
 
             // 生产（受损伤 M6.4 后在此并入建筑状态因子）。
             // 幸福度乘数只作用于产出（士气提升单位投入产出比），不放大消耗

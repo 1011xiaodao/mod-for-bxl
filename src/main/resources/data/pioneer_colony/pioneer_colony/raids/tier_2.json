@@ -1,0 +1,9 @@
+{
+  "_note": "占位数值，待项目主定稿",
+  "tier": 2,
+  "waves": [
+    {"entity": "minecraft:zombie", "count": 6, "delay_seconds": 0}
+  ],
+  "loot": [{"item": "minecraft:iron_ingot", "count": 5}],
+  "hq_damage_per_hit": 2.0
+}

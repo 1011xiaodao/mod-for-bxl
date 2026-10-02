@@ -59,6 +59,8 @@ public final class Colony {
     private final Map<String, Double> researchProductionBonus = new LinkedHashMap<>();
     /** colony 通道研究效果：市民上限加成。 */
     private int researchCitizenCapBonus = 0;
+    /** 总部耐久（M6.4：打空 → 停摆待修复）。 */
+    private double hqHealth = 200.0;
 
     public Colony(UUID uuid, UUID owner, String name, String dimension, int blockX, int blockZ) {
         this.uuid = uuid;
@@ -350,6 +352,7 @@ public final class Colony {
         }
         tag.put("researchProductionBonus", bonusList);
         tag.putInt("researchCitizenCapBonus", researchCitizenCapBonus);
+        tag.putDouble("hqHealth", hqHealth);
         tag.putLong("lastPurchaseWallTime", lastPurchaseWallTime);
 
         ListTag territoryList = new ListTag();
@@ -414,6 +417,7 @@ public final class Colony {
             colony.researchProductionBonus.put(t.getString("tag"), t.getDouble("percent"));
         }
         colony.researchCitizenCapBonus = tag.getInt("researchCitizenCapBonus");
+        colony.hqHealth = tag.contains("hqHealth") ? tag.getDouble("hqHealth") : 200.0;
         colony.lastPurchaseWallTime = tag.getLong("lastPurchaseWallTime");
 
         ListTag territoryList = tag.getList("territory", Tag.TAG_COMPOUND);
@@ -599,5 +603,21 @@ public final class Colony {
 
     public void addResearchCitizenCapBonus(int n) {
         researchCitizenCapBonus += n;
+    }
+
+    // —— 总部耐久（M6.4） ——
+
+    public double getHqHealth() {
+        return hqHealth;
+    }
+
+    /** 扣总部耐久（下限 0），返回扣后值。 */
+    public double damageHq(double amount) {
+        hqHealth = Math.max(0, hqHealth - Math.max(0, amount));
+        return hqHealth;
+    }
+
+    public void setHqHealth(double health) {
+        this.hqHealth = Math.max(0, health);
     }
 }

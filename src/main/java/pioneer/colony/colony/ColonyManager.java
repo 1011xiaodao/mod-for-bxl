@@ -39,6 +39,10 @@ public final class ColonyManager {
                 pioneer.colony.research.StubResearchSystem.tickServer(server);
             }
         }
+        // 袭击系统每秒 tick（倒计时/开打条件/总部耐久/波次/结算）
+        if (serverTickCounter % 20 == 0) {
+            pioneer.colony.raid.RaidManager.tickServer(server);
+        }
     }
 
     /**

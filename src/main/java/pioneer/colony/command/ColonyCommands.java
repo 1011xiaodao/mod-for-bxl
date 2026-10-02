@@ -2,6 +2,7 @@ package pioneer.colony.command;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.BoolArgumentType;
+import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -140,6 +141,25 @@ public final class ColonyCommands {
                                 .executes(ctx -> debugOrigin(ctx.getSource(), StringArgumentType.getString(ctx, "def")))))
                 .then(Commands.literal("dissolve").requires(s -> s.hasPermission(2))
                         .executes(ctx -> dissolve(ctx.getSource())))
+                .then(Commands.literal("raid").requires(s -> s.hasPermission(2))
+                        .then(Commands.literal("status")
+                                .executes(ctx -> raidStatus(ctx.getSource())))
+                        .then(Commands.literal("debug")
+                                .then(Commands.argument("tier", IntegerArgumentType.integer(1, 5))
+                                        .executes(ctx -> raidDebugTrigger(ctx.getSource(),
+                                                IntegerArgumentType.getInteger(ctx, "tier")))))
+                        .then(Commands.literal("spawn")
+                                .then(Commands.argument("tier", IntegerArgumentType.integer(1, 5))
+                                        .executes(ctx -> raidDebugSpawn(ctx.getSource(),
+                                                IntegerArgumentType.getInteger(ctx, "tier")))))
+                        .then(Commands.literal("end")
+                                .executes(ctx -> raidDebugEnd(ctx.getSource())))
+                        .then(Commands.literal("damagehq")
+                                .then(Commands.argument("amount", DoubleArgumentType.doubleArg(1))
+                                        .executes(ctx -> raidDamageHq(ctx.getSource(),
+                                                DoubleArgumentType.getDouble(ctx, "amount"))))))
+                .then(Commands.literal("repair").requires(s -> s.hasPermission(2))
+                        .executes(ctx -> repair(ctx.getSource())))
                 .then(Commands.literal("research")
                         .then(Commands.literal("list")
                                 .executes(ctx -> researchList(ctx.getSource())))
@@ -542,7 +562,8 @@ public final class ColonyCommands {
         long now = System.currentTimeMillis();
         final int[] count = {0};
         for (BuildingInstance b : colony.getBuildings()) {
-            if (b.status() == BuildingInstance.Status.CONSTRUCTION) {
+            if (b.status() == BuildingInstance.Status.CONSTRUCTION
+                    || b.status() == BuildingInstance.Status.UNDER_REPAIR) {
                 b.setBuildEndWall(now);
                 count[0]++;
             } else if (b.status() == BuildingInstance.Status.DISMANTLING) {
@@ -552,6 +573,99 @@ public final class ColonyCommands {
         }
         source.sendSuccess(() -> Component.literal("已将 " + count[0] + " 个施工/拆除倒计时置为到点（区块加载时立即成形/拆除）。"), true);
         return 1;
+    }
+
+    // —— raid / repair（M6.4） ——
+
+    private static int raidStatus(CommandSourceStack source) {
+        Colony colony = resolveColony(source);
+        if (colony == null) {
+            source.sendFailure(Component.literal("没有目标殖民地。"));
+            return 0;
+        }
+        String status = pioneer.colony.raid.RaidManager.debugStatus(source.getServer(), colony);
+        source.sendSuccess(() -> Component.literal(status), false);
+        return 1;
+    }
+
+    private static int raidDebugTrigger(CommandSourceStack source, int tier) {
+        Colony colony = resolveColony(source);
+        if (colony == null) {
+            source.sendFailure(Component.literal("没有目标殖民地。"));
+            return 0;
+        }
+        String result = pioneer.colony.raid.RaidManager.debugTrigger(source.getServer(), colony, tier);
+        source.sendSuccess(() -> Component.literal(result), true);
+        return 1;
+    }
+
+    private static int raidDebugSpawn(CommandSourceStack source, int tier) {
+        Colony colony = resolveColony(source);
+        if (colony == null) {
+            source.sendFailure(Component.literal("没有目标殖民地。"));
+            return 0;
+        }
+        String result = pioneer.colony.raid.RaidManager.debugSpawnNow(source.getServer(), colony, tier);
+        source.sendSuccess(() -> Component.literal(result), true);
+        return 1;
+    }
+
+    private static int raidDebugEnd(CommandSourceStack source) {
+        Colony colony = resolveColony(source);
+        if (colony == null) {
+            source.sendFailure(Component.literal("没有目标殖民地。"));
+            return 0;
+        }
+        String result = pioneer.colony.raid.RaidManager.debugEnd(source.getServer(), colony);
+        source.sendSuccess(() -> Component.literal(result), true);
+        return 1;
+    }
+
+    private static int raidDamageHq(CommandSourceStack source, double amount) {
+        Colony colony = resolveColony(source);
+        if (colony == null) {
+            source.sendFailure(Component.literal("没有目标殖民地。"));
+            return 0;
+        }
+        double before = colony.getHqHealth();
+        double after = colony.damageHq(amount);
+        if (after <= 0 && colony.getHqState() == Colony.HqState.NORMAL) {
+            colony.setHqState(Colony.HqState.STOPPED);
+            source.sendSuccess(() -> Component.literal("总部耐久打空，殖民地停摆！用 /colony repair 原地修复。"), true);
+        } else {
+            double finalAfter = after;
+            source.sendSuccess(() -> Component.literal(String.format("总部耐久 %.0f → %.0f。", before, finalAfter)), true);
+        }
+        return 1;
+    }
+
+    private static int repair(CommandSourceStack source) {
+        Colony colony = resolveColony(source);
+        if (colony == null) {
+            source.sendFailure(Component.literal("没有目标殖民地。"));
+            return 0;
+        }
+        // 优先修总部（停摆时），否则修第一座受损建筑
+        BuildingInstance target = colony.getBuildings().stream()
+                .filter(b -> "hq".equals(b.definitionId()) && colony.getHqState() == Colony.HqState.STOPPED)
+                .findFirst()
+                .or(() -> colony.getBuildings().stream()
+                        .filter(b -> b.status() == BuildingInstance.Status.DAMAGED)
+                        .findFirst())
+                .orElse(null);
+        if (target == null) {
+            source.sendFailure(Component.literal("没有需要维修的建筑。"));
+            return 0;
+        }
+        ServerPlayer player = source.getEntity() instanceof ServerPlayer p ? p : null;
+        var result = pioneer.colony.construction.ConstructionService.tryRepair(
+                source.getLevel(), colony, target, player);
+        if (result.success()) {
+            source.sendSuccess(() -> Component.literal(result.message()), true);
+            return 1;
+        }
+        source.sendFailure(Component.literal(result.message()));
+        return 0;
     }
 
     // —— research（M6.3，与 GUI 研究页同源 ResearchService） ——

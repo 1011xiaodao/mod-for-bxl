@@ -17,4 +17,9 @@ public final class ClientSetup {
     public static void onRegisterScreens(RegisterMenuScreensEvent event) {
         event.register(ModRegistry.COLONY_CORE_MENU.get(), ColonyCoreScreen::new);
     }
+
+    @SubscribeEvent
+    public static void onRegisterRenderers(net.neoforged.neoforge.client.event.EntityRenderersEvent.RegisterRenderers event) {
+        event.registerEntityRenderer(ModRegistry.CITIZEN_ENTITY.get(), CitizenRenderer::new);
+    }
 }

@@ -24,5 +24,6 @@ public final class PioneerColony {
         pioneer.colony.registry.ModRegistry.BLOCK_ENTITIES.register(modEventBus);
         pioneer.colony.registry.ModRegistry.MENUS.register(modEventBus);
         pioneer.colony.registry.ModRegistry.CREATIVE_TABS.register(modEventBus);
+        pioneer.colony.registry.ModRegistry.ENTITIES.register(modEventBus);
     }
 }

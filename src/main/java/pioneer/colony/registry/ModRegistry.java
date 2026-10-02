@@ -3,6 +3,7 @@ package pioneer.colony.registry;
 import java.util.List;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.ItemStack;
@@ -19,6 +20,7 @@ import pioneer.colony.PioneerColony;
 import pioneer.colony.block.ColonyCoreBlock;
 import pioneer.colony.block.ConstructionBarrierBlock;
 import pioneer.colony.blockentity.ColonyCoreBlockEntity;
+import pioneer.colony.entity.CitizenEntity;
 import pioneer.colony.item.FoundationItem;
 import pioneer.colony.menu.ColonyCoreMenu;
 
@@ -36,6 +38,8 @@ public final class ModRegistry {
             DeferredRegister.create(Registries.MENU, PioneerColony.MODID);
     public static final DeferredRegister<CreativeModeTab> CREATIVE_TABS =
             DeferredRegister.create(Registries.CREATIVE_MODE_TAB, PioneerColony.MODID);
+    public static final DeferredRegister<EntityType<?>> ENTITIES =
+            DeferredRegister.create(Registries.ENTITY_TYPE, PioneerColony.MODID);
 
     // —— 方块 ——
 
@@ -54,6 +58,14 @@ public final class ModRegistry {
                     .strength(0.5F)
                     .noLootTable()
                     .sound(SoundType.WOOD)));
+
+    /** 市民参战实体（M6.4 袭击；M6.5 演化为常驻市民）。 */
+    public static final DeferredHolder<EntityType<?>, EntityType<CitizenEntity>> CITIZEN_ENTITY =
+            ENTITIES.register("citizen", () -> EntityType.Builder
+                    .of(CitizenEntity::new, net.minecraft.world.entity.MobCategory.MISC)
+                    .sized(0.6F, 1.8F)
+                    .clientTrackingRange(10)
+                    .build("pioneer_colony:citizen"));
 
     // —— BlockEntity / Menu ——
 

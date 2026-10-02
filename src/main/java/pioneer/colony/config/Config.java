@@ -44,6 +44,28 @@ public final class Config {
     public static final ModConfigSpec.DoubleValue RESEARCH_SPEED_PER_SCIENTIST;
     public static final ModConfigSpec.DoubleValue RESEARCH_SPEED_CAP;
 
+    public static final ModConfigSpec.DoubleValue THREAT_COEF_BUILDING;
+    public static final ModConfigSpec.DoubleValue THREAT_BUILDING_WEIGHT;
+    public static final ModConfigSpec.DoubleValue THREAT_COEF_BUFFER_VALUE;
+    public static final ModConfigSpec.DoubleValue THREAT_COEF_POPULATION;
+    public static final ModConfigSpec.DoubleValue THREAT_COEF_CREDITS;
+    public static final ModConfigSpec.DoubleValue THREAT_CONVERGENCE;
+    public static final ModConfigSpec.ConfigValue<List<? extends String>> RAID_TIER_THRESHOLDS;
+    public static final ModConfigSpec.IntValue RAID_COUNTDOWN_SECONDS;
+    public static final ModConfigSpec.IntValue RAID_POSTPONE_SECONDS;
+    public static final ModConfigSpec.IntValue RAID_PLAYER_RANGE;
+    public static final ModConfigSpec.IntValue RAID_MOB_CAP;
+    public static final ModConfigSpec.IntValue RAID_TIMEOUT_SECONDS;
+    public static final ModConfigSpec.IntValue VICTORY_THREAT_REDUCTION_PERCENT;
+    public static final ModConfigSpec.DoubleValue CITIZEN_BASE_DAMAGE;
+    public static final ModConfigSpec.DoubleValue CITIZEN_GUARD_MULTIPLIER;
+    public static final ModConfigSpec.DoubleValue CITIZEN_WORKER_MULTIPLIER;
+    public static final ModConfigSpec.DoubleValue DAMAGED_EFFICIENCY_FACTOR;
+    public static final ModConfigSpec.IntValue REPAIR_BUILD_SECONDS_FACTOR_PERCENT;
+    public static final ModConfigSpec.IntValue REPAIR_COST_PERCENT;
+    public static final ModConfigSpec.DoubleValue HQ_MAX_HEALTH;
+    public static final ModConfigSpec.DoubleValue RAID_BUILDING_DAMAGE_CHANCE;
+
     public static final ModConfigSpec.BooleanValue DEBUG_LOG_ECONOMY_TICK;
 
     static {
@@ -123,6 +145,53 @@ public final class Config {
                 .defineInRange("speedPerScientist", 0.15, 0.0, 10.0);
         RESEARCH_SPEED_CAP = b.comment("研究速度加成上限（定稿 +60%）")
                 .defineInRange("speedCap", 0.6, 0.0, 10.0);
+        b.pop();
+
+        b.push("raid");
+        THREAT_COEF_BUILDING = b.comment("威胁值：建筑总等级 × 此系数（再乘建筑权重，默认 50%——避免多建多挨打）")
+                .defineInRange("threatCoefBuilding", 2.0, 0.0, 1000.0);
+        THREAT_BUILDING_WEIGHT = b.comment("威胁值：建筑项权重（定稿 50%）")
+                .defineInRange("threatBuildingWeight", 0.5, 0.0, 1.0);
+        THREAT_COEF_BUFFER_VALUE = b.comment("威胁值：缓冲物资价值（按市场基准价折算）× 此系数")
+                .defineInRange("threatCoefBufferValue", 0.05, 0.0, 10.0);
+        THREAT_COEF_POPULATION = b.comment("威胁值：人口 × 此系数")
+                .defineInRange("threatCoefPopulation", 5.0, 0.0, 1000.0);
+        THREAT_COEF_CREDITS = b.comment("威胁值：金库 × 此系数（最低权重）")
+                .defineInRange("threatCoefCredits", 0.02, 0.0, 10.0);
+        THREAT_CONVERGENCE = b.comment("威胁值向财富推导值收敛速率（每经济 tick 比例；胜利 -30% 后自然回升）")
+                .defineInRange("threatConvergence", 0.1, 0.0, 1.0);
+        RAID_TIER_THRESHOLDS = b.comment("袭击档位阈值（威胁值达到即触发倒计时），格式「档位:阈值」逗号分隔")
+                .defineList("raidTierThresholds",
+                        List.of("1:100", "2:250", "3:500", "4:800", "5:1200"),
+                        o -> o instanceof String s && s.contains(":"));
+        RAID_COUNTDOWN_SECONDS = b.comment("袭击倒计时（秒）+ 警报与方向预警")
+                .defineInRange("raidCountdownSeconds", 600, 30, 86400);
+        RAID_POSTPONE_SECONDS = b.comment("无人时推迟时长（秒，零成本重排队）")
+                .defineInRange("raidPostponeSeconds", 60, 10, 86400);
+        RAID_PLAYER_RANGE = b.comment("开打条件：总部 N 格内有在线玩家才生成袭击波（定稿 64）")
+                .defineInRange("raidPlayerRange", 64, 8, 512);
+        RAID_MOB_CAP = b.comment("袭击怪实体上限（每殖民地，可配）")
+                .defineInRange("raidMobCap", 20, 1, 200);
+        RAID_TIMEOUT_SECONDS = b.comment("袭击怪存活超时自动撤退 = 防守成功（定稿 5 分钟）")
+                .defineInRange("raidTimeoutSeconds", 300, 30, 86400);
+        VICTORY_THREAT_REDUCTION_PERCENT = b.comment("胜利后威胁值削减百分比（定稿 30%，随财富自然回升）")
+                .defineInRange("victoryThreatReductionPercent", 30, 0, 100);
+        CITIZEN_BASE_DAMAGE = b.comment("市民参战基础攻击力（守卫 100%，其他 25%）")
+                .defineInRange("citizenBaseDamage", 4.0, 0.0, 100.0);
+        CITIZEN_GUARD_MULTIPLIER = b.comment("守卫战力倍率（定稿 100%，受研究加成）")
+                .defineInRange("citizenGuardMultiplier", 1.0, 0.0, 10.0);
+        CITIZEN_WORKER_MULTIPLIER = b.comment("非守卫市民战力倍率（定稿 25%）")
+                .defineInRange("citizenWorkerMultiplier", 0.25, 0.0, 10.0);
+        DAMAGED_EFFICIENCY_FACTOR = b.comment("建筑「受损」状态效率倍率（定稿 50%，需维修）")
+                .defineInRange("damagedEfficiencyFactor", 0.5, 0.0, 1.0);
+        REPAIR_BUILD_SECONDS_FACTOR_PERCENT = b.comment("维修倒计时 = 施工时长 × 此百分比")
+                .defineInRange("repairBuildSecondsFactorPercent", 50, 5, 100);
+        REPAIR_COST_PERCENT = b.comment("维修材料费用 = 该建筑当前等级建造成本 × 此百分比（另收一次性建设费）")
+                .defineInRange("repairCostPercent", 50, 0, 100);
+        HQ_MAX_HEALTH = b.comment("总部耐久上限（打空 → 停摆待修复，原地修复恢复）")
+                .defineInRange("hqMaxHealth", 200.0, 1.0, 100000.0);
+        RAID_BUILDING_DAMAGE_CHANCE = b.comment("袭击期间每 30 秒随机一座建筑受损的概率")
+                .defineInRange("buildingDamageChance", 0.15, 0.0, 1.0);
         b.pop();
 
         b.push("debug");

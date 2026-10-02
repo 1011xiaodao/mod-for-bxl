@@ -22,6 +22,18 @@ public final class GameEvents {
         event.addListener(new BuildingDefinitions());
         // 研究桩加载器（与 [研究台] 目录格式一致；桩未启用时仅空载）
         event.addListener(new pioneer.colony.research.StubResearchSystem.DefLoader());
+        // 市场价目表（威胁值物资估值 + M6.7 市场共用）
+        event.addListener(new pioneer.colony.market.MarketPrices());
+        // 袭击波次配置（5 档）
+        event.addListener(new pioneer.colony.raid.RaidConfigs());
+    }
+
+    @SubscribeEvent
+    public static void onEntityJoinLevel(net.neoforged.neoforge.event.entity.EntityJoinLevelEvent event) {
+        // 袭击怪/市民参战实体孤儿自清（服务器重启后无活跃袭击即清除）
+        if (!event.getLevel().isClientSide) {
+            pioneer.colony.raid.RaidManager.cleanupOrphan(event.getEntity());
+        }
     }
 
     @SubscribeEvent
