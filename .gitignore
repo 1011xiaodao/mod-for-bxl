@@ -10,3 +10,4 @@ run/
 bin/
 .classpath
 .project
+native/target/
