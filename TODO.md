@@ -1,6 +1,7 @@
 # TODO — 开发路线与待办
 
 > 进度基线：M6.1~M6.4 已完成（见各 `回报-M6.x-*.md`）。数值占位与待项目主决策项以各回报 §5 为准。
+> 开发看板：https://github.com/users/1011xiaodao/projects/1 （issue 开=Todo，关=Done）
 
 ## 里程碑
 
