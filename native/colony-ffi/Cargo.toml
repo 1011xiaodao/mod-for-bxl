@@ -1,6 +1,10 @@
 [package]
 name = "colony-ffi"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
 
 [dependencies]
+colony-core = { path = "../colony-core" }

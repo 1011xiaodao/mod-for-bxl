@@ -1,14 +1,11 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+pub mod economy;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub mod citizen;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub mod market;
+
+pub mod gauge;
+
+pub mod happiness;
+
+pub mod trade;
