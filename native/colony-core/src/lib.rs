@@ -1,3 +1,5 @@
+use bevy_ecs::prelude::*;
+
 pub mod economy;
 
 pub mod citizen;
@@ -15,16 +17,36 @@ fn main () {
     let gold = 0;
 
 }
-struct ColonySnapshot {
-    id:i8,
-    population:u32,
-    funds:i32,
-    happiness_level:f32,
-    food:u32
+#[derive(Resource)]
+struct Time {
+    tick:i64
 }
-struct EconomyDelta {
-    population_delta: i32,
-    funds_delta: i32,
-    happiness_delta: f32,
-    food_delta:i32
+#[derive(Component)]
+struct Id(u16);
+#[derive(Component)]
+struct Population(u32);
+#[derive(Component)]
+struct Funds(u32);
+#[derive(Component)]
+struct HappinessLevel(f32);
+#[derive(Component)]
+struct Food(u32);
+#[derive(Component)]
+struct Works(u32);
+
+struct PopulationsDelta {
+    entity: Entity,
+    delta: i32,
+}
+struct FundsDelta {
+    entity: Entity,
+    delta: i32,
+}
+struct HappinessLevelDelta {
+    entity: Entity,
+    level: i32,
+}
+struct FoodDelta {
+    entity: Entity,
+    delta: i32,
 }
