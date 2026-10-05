@@ -1,0 +1,9 @@
+[package]
+name = "colony-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+bevy_ecs.workspace = true
