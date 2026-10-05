@@ -141,6 +141,30 @@ public final class TerritoryProtection {
     }
 
     @SubscribeEvent
+    public static void onPlayerAttackEntity(net.neoforged.neoforge.event.entity.player.AttackEntityEvent event) {
+        // 市民受保护（06 §8.1）：领地内不可被玩家攻击；领地外可被攻击（构成领地防御的动机）
+        if (event.getEntity().level().isClientSide) {
+            return;
+        }
+        if (!(event.getTarget() instanceof pioneer.colony.entity.CitizenEntity citizen) || !citizen.isPermanent()) {
+            return;
+        }
+        if (!(event.getEntity().level() instanceof ServerLevel serverLevel)) {
+            return;
+        }
+        Colony colony = colonyAt(serverLevel, citizen.blockPosition());
+        if (colony == null) {
+            return;
+        }
+        if (bypass(event.getEntity())) {
+            return;
+        }
+        event.setCanceled(true);
+        event.getEntity().displayClientMessage(
+                Component.literal("「" + colony.getName() + "」领地内的市民受保护，不可攻击。"), true);
+    }
+
+    @SubscribeEvent
     public static void onExplosion(ExplosionEvent.Detonate event) {
         if (!(event.getLevel() instanceof ServerLevel serverLevel)) {
             return;

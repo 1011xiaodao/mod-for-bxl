@@ -66,6 +66,16 @@ public final class Config {
     public static final ModConfigSpec.DoubleValue HQ_MAX_HEALTH;
     public static final ModConfigSpec.DoubleValue RAID_BUILDING_DAMAGE_CHANCE;
 
+    public static final ModConfigSpec.IntValue MAX_SIMULATED_CITIZENS;
+    public static final ModConfigSpec.IntValue WORK_START_TICK;
+    public static final ModConfigSpec.IntValue LUNCH_START_TICK;
+    public static final ModConfigSpec.IntValue LUNCH_END_TICK;
+    public static final ModConfigSpec.IntValue DINNER_START_TICK;
+    public static final ModConfigSpec.IntValue DINNER_END_TICK;
+    public static final ModConfigSpec.IntValue MEALS_PER_DAY;
+    public static final ModConfigSpec.IntValue STUCK_TELEPORT_SECONDS;
+    public static final ModConfigSpec.BooleanValue LOG_CITIZEN_EVENTS;
+
     public static final ModConfigSpec.BooleanValue DEBUG_LOG_ECONOMY_TICK;
 
     static {
@@ -192,6 +202,27 @@ public final class Config {
                 .defineInRange("hqMaxHealth", 200.0, 1.0, 100000.0);
         RAID_BUILDING_DAMAGE_CHANCE = b.comment("袭击期间每 30 秒随机一座建筑受损的概率")
                 .defineInRange("buildingDamageChance", 0.15, 0.0, 1.0);
+        b.pop();
+
+        b.push("citizens");
+        MAX_SIMULATED_CITIZENS = b.comment("单殖民地同时模拟的市民实体上限（-1 = 不限；超出部分仅存数据不生成实体，公开服保险丝）")
+                .defineInRange("maxSimulatedCitizens", -1, -1, 10_000);
+        WORK_START_TICK = b.comment("上班时刻（dayTime tick，0=06:00，1000=1 小时游戏时）")
+                .defineInRange("workStartTick", 2500, 0, 23999);
+        LUNCH_START_TICK = b.comment("午餐食堂时刻")
+                .defineInRange("lunchStartTick", 6000, 0, 23999);
+        LUNCH_END_TICK = b.comment("午餐结束时刻")
+                .defineInRange("lunchEndTick", 7000, 0, 23999);
+        DINNER_START_TICK = b.comment("晚餐食堂时刻（=下班）")
+                .defineInRange("dinnerStartTick", 11500, 0, 23999);
+        DINNER_END_TICK = b.comment("晚餐结束时刻（此后归家）")
+                .defineInRange("dinnerEndTick", 12500, 0, 23999);
+        MEALS_PER_DAY = b.comment("每市民每日就餐次数（每餐食物点 = 每日食物点 ÷ 次数；日程就餐从缓冲实扣并在经济 tick 中抵扣，防双重记账）")
+                .defineInRange("mealsPerDay", 2, 0, 6);
+        STUCK_TELEPORT_SECONDS = b.comment("通勤卡住 N 秒后传送到目标点（0 = 关闭保险；寻路失败兜底）")
+                .defineInRange("stuckTeleportSeconds", 30, 0, 3600);
+        LOG_CITIZEN_EVENTS = b.comment("市民事件（出生/身亡/就餐）写日志（RCON 冒烟验收证据）")
+                .define("logCitizenEvents", true);
         b.pop();
 
         b.push("debug");

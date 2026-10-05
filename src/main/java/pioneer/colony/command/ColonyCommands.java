@@ -160,6 +160,25 @@ public final class ColonyCommands {
                                                 DoubleArgumentType.getDouble(ctx, "amount"))))))
                 .then(Commands.literal("repair").requires(s -> s.hasPermission(2))
                         .executes(ctx -> repair(ctx.getSource())))
+                .then(Commands.literal("citizen").requires(s -> s.hasPermission(2))
+                        .then(Commands.literal("info")
+                                .executes(ctx -> citizenInfo(ctx.getSource())))
+                        .then(Commands.literal("perf")
+                                .executes(ctx -> citizenPerf(ctx.getSource())))
+                        .then(Commands.literal("perfreset")
+                                .executes(ctx -> {
+                                    pioneer.colony.citizen.CitizenManager.resetPerf();
+                                    ctx.getSource().sendSuccess(() -> Component.literal("性能计量峰值已清零。"), false);
+                                    return 1;
+                                }))
+                        .then(Commands.literal("debug")
+                                .executes(ctx -> citizenDebug(ctx.getSource())))
+                        .then(Commands.literal("sync")
+                                .executes(ctx -> citizenSync(ctx.getSource()))))
+                .then(Commands.literal("debugpopulation").requires(s -> s.hasPermission(2))
+                        .then(Commands.argument("population", IntegerArgumentType.integer(0))
+                                .executes(ctx -> debugPopulation(ctx.getSource(),
+                                        IntegerArgumentType.getInteger(ctx, "population")))))
                 .then(Commands.literal("research")
                         .then(Commands.literal("list")
                                 .executes(ctx -> researchList(ctx.getSource())))
@@ -176,6 +195,78 @@ public final class ColonyCommands {
                                         .executes(ctx -> withdraw(ctx.getSource(), StringArgumentType.getString(ctx, "item"),
                                                 LongArgumentType.getLong(ctx, "count"))))));
         dispatcher.register(root);
+    }
+
+    // —— citizen（M6.5 市民日程模拟） ——
+
+    private static int citizenDebug(CommandSourceStack source) {
+        Colony colony = resolveColony(source);
+        if (colony == null) {
+            source.sendFailure(Component.literal("没有可操作的殖民地。"));
+            return 0;
+        }
+        StringBuilder sb = new StringBuilder("市民明细：\n");
+        int i = 0;
+        for (pioneer.colony.entity.CitizenEntity c : pioneer.colony.citizen.CitizenManager.liveOf(colony)) {
+            if (i++ >= 8) {
+                sb.append(" …（共 ").append(pioneer.colony.citizen.CitizenManager.liveCount(colony.uuid())).append("）");
+                break;
+            }
+            String target = "-";
+            double dist = -1;
+            if (c.hasGoalTarget()) {
+                BlockPos t = c.goalTargetPos();
+                target = t.getX() + "," + t.getY() + "," + t.getZ();
+                dist = Math.sqrt(c.distanceToSqr(t.getX() + 0.5, t.getY(), t.getZ() + 0.5));
+            }
+            sb.append(String.format(" · [%s] %s 目标=%s 距离=%.1f 寻路中=%s 卡住=%ds 抖动=%ds%n",
+                    c.getCustomName() != null ? c.getCustomName().getString() : "?",
+                    c.goal(), target, dist,
+                    c.getNavigation().isInProgress() ? "是" : "否", c.stuckSeconds(), c.navDelay()));
+        }
+        String out = sb.toString();
+        source.sendSuccess(() -> Component.literal(out), false);
+        return 1;
+    }
+
+    private static int citizenInfo(CommandSourceStack source) {
+        Colony colony = resolveColony(source);
+        if (colony == null) {
+            source.sendFailure(Component.literal("没有可操作的殖民地。"));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("【市民】"
+                + pioneer.colony.citizen.CitizenManager.infoLine(colony)), false);
+        return 1;
+    }
+
+    private static int citizenPerf(CommandSourceStack source) {
+        source.sendSuccess(() -> Component.literal(pioneer.colony.citizen.CitizenManager.perfReport()), false);
+        return 1;
+    }
+
+    private static int citizenSync(CommandSourceStack source) {
+        Colony colony = resolveColony(source);
+        if (colony == null) {
+            source.sendFailure(Component.literal("没有可操作的殖民地。"));
+            return 0;
+        }
+        pioneer.colony.citizen.CitizenManager.tickServer(source.getServer());
+        source.sendSuccess(() -> Component.literal("已强制对账一轮。" + pioneer.colony.citizen.CitizenManager.infoLine(colony)), false);
+        return 1;
+    }
+
+    private static int debugPopulation(CommandSourceStack source, int population) {
+        Colony colony = resolveColony(source);
+        if (colony == null) {
+            source.sendFailure(Component.literal("没有可操作的殖民地。"));
+            return 0;
+        }
+        colony.setPopulation(population);
+        ColonySavedData.get(source.getServer()).setDirty();
+        source.sendSuccess(() -> Component.literal(String.format(
+                "人口已设为 %d（市民实体随每秒对账在住宅区块加载时补齐/回收）。", population)), false);
+        return 1;
     }
 
     // —— create ——

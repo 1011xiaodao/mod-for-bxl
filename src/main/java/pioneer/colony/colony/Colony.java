@@ -61,6 +61,8 @@ public final class Colony {
     private int researchCitizenCapBonus = 0;
     /** 总部耐久（M6.4：打空 → 停摆待修复）。 */
     private double hqHealth = 200.0;
+    /** M6.5 日程就餐已实扣的食物点（经济 tick 从人口需求中抵扣，防双重记账；残留滚存下期）。 */
+    private double fedPointsCarry = 0.0;
 
     public Colony(UUID uuid, UUID owner, String name, String dimension, int blockX, int blockZ) {
         this.uuid = uuid;
@@ -353,6 +355,7 @@ public final class Colony {
         tag.put("researchProductionBonus", bonusList);
         tag.putInt("researchCitizenCapBonus", researchCitizenCapBonus);
         tag.putDouble("hqHealth", hqHealth);
+        tag.putDouble("fedPointsCarry", fedPointsCarry);
         tag.putLong("lastPurchaseWallTime", lastPurchaseWallTime);
 
         ListTag territoryList = new ListTag();
@@ -418,6 +421,7 @@ public final class Colony {
         }
         colony.researchCitizenCapBonus = tag.getInt("researchCitizenCapBonus");
         colony.hqHealth = tag.contains("hqHealth") ? tag.getDouble("hqHealth") : 200.0;
+        colony.fedPointsCarry = tag.contains("fedPointsCarry") ? tag.getDouble("fedPointsCarry") : 0.0;
         colony.lastPurchaseWallTime = tag.getLong("lastPurchaseWallTime");
 
         ListTag territoryList = tag.getList("territory", Tag.TAG_COMPOUND);
@@ -619,5 +623,20 @@ public final class Colony {
 
     public void setHqHealth(double health) {
         this.hqHealth = Math.max(0, health);
+    }
+
+    // —— 日程就餐抵扣（M6.5） ——
+
+    public double getFedPointsCarry() {
+        return fedPointsCarry;
+    }
+
+    public void setFedPointsCarry(double fedPointsCarry) {
+        this.fedPointsCarry = Math.max(0, fedPointsCarry);
+    }
+
+    /** 市民就餐实扣食物点入账（经济 tick 抵扣用）。 */
+    public void addFedPoints(double points) {
+        fedPointsCarry += Math.max(0, points);
     }
 }

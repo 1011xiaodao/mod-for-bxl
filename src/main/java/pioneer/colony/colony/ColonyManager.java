@@ -42,6 +42,8 @@ public final class ColonyManager {
         // 袭击系统每秒 tick（倒计时/开打条件/总部耐久/波次/结算）
         if (serverTickCounter % 20 == 0) {
             pioneer.colony.raid.RaidManager.tickServer(server);
+            // 市民日程模拟每秒 tick（人口对账补生成/回收 + 日程通勤 + 就餐实扣，M6.5）
+            pioneer.colony.citizen.CitizenManager.tickServer(server);
         }
     }
 

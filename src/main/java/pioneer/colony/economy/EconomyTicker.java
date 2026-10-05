@@ -122,7 +122,11 @@ public final class EconomyTicker {
         if (population > 0) {
             double demandPoints = population * Config.FOOD_POINTS_PER_CITIZEN_PER_DAY.get()
                     * minutes / (double) GAME_DAY_MINUTES;
-            if (demandPoints > 0) {
+            // M6.5 日程就餐已从缓冲实扣的部分在此抵扣（残留滚存下期），防双重记账
+            double offset = Math.min(demandPoints, colony.getFedPointsCarry());
+            colony.setFedPointsCarry(colony.getFedPointsCarry() - offset);
+            demandPoints -= offset;
+            if (demandPoints > 1e-9) {
                 foodRate = consumeFood(colony, demandPoints, result);
                 if (foodRate < 1.0) {
                     result.events.add(String.format("食物不足（满足率 %.0f%%），生产降效", foodRate * 100));

@@ -28,7 +28,6 @@ import pioneer.colony.colony.ColonySavedData;
 import pioneer.colony.config.Config;
 import pioneer.colony.entity.CitizenEntity;
 import pioneer.colony.market.MarketPrices;
-import pioneer.colony.registry.ModRegistry;
 import pioneer.colony.raid.RaidConfigs.RaidDef;
 import pioneer.colony.raid.RaidConfigs.Wave;
 
@@ -66,11 +65,6 @@ public final class RaidManager {
     }
 
     private static final Map<UUID, RaidState> states = new HashMap<>();
-
-    /** 市民随机名字池（占位，正式名单待项目主）。 */
-    private static final String[] NAMES = {"张三", "李四", "王五", "赵六", "陈七", "刘八", "孙九", "周十",
-            "吴一", "郑二", "王芳", "李娜", "张伟", "刘洋", "陈静", "杨帆",
-            "赵磊", "黄强", "周杰", "吴迪", "徐婷", "孙丽", "马超", "朱霞"};
 
     private RaidManager() {
     }
@@ -244,10 +238,14 @@ public final class RaidManager {
         state.raidStartWall = System.currentTimeMillis();
         state.nextWaveWall = state.raidStartWall;
         state.lastBuildingDamageWall = state.raidStartWall;
-        // 全体市民生成参战实体（守卫 100%，其他 25%；受研究加成）
-        spawnCitizens(server, level, colony, state, hq);
+        // 全体市民参战（M6.5：常驻市民实体即战斗体——日程引擎转入 RALLY 向总部集结，
+        // 战斗由市民 AI 自动接敌，伤亡按真实战斗写回人口；未加载区块的市民冻结不参战）
+        List<UUID> fighters = pioneer.colony.citizen.CitizenManager.mobilizeForRaid(colony);
+        state.citizenIds.clear();
+        state.citizenIds.addAll(fighters);
         notifyOwner(server, colony, "⚠ 袭击开始！全体市民已参战（"
-                + state.citizenIds.size() + " 人出战）。");
+                + state.citizenIds.size() + " 人出战"
+                + (state.citizenIds.size() < colony.getPopulation() ? "，其余所在区块未加载暂冻结" : "") + "）。");
     }
 
     private static void spawnWave(MinecraftServer server, ServerLevel level, Colony colony,
@@ -294,52 +292,8 @@ public final class RaidManager {
         }
     }
 
-    /** 全体市民参战实体：守卫 = 守卫哨在岗数；其余 = 人口-守卫。 */
-    private static void spawnCitizens(MinecraftServer server, ServerLevel level, Colony colony,
-                                      RaidState state, BlockPos hq) {
-        int guards = 0;
-        for (BuildingInstance b : colony.getBuildings()) {
-            if ("guard_post".equals(b.definitionId())
-                    && b.status() == pioneer.colony.colony.BuildingInstance.Status.ACTIVE) {
-                guards += Math.max(0, (int) Math.round(pioneer.colony.colony.BuildingDefinitions
-                        .get(b.definitionId()).map(d -> d.tierWorkerSlots(b.tier()) * b.getLastFillRate()).orElse(0.0)));
-            }
-        }
-        guards = Math.min(guards, colony.getPopulation());
-        int workers = Math.max(0, colony.getPopulation() - guards);
-        double guardBonus = 1.0 + colony.productionBonusFor(List.of("__guard_power"));
-        double guardDamage = Config.CITIZEN_BASE_DAMAGE.get() * Config.CITIZEN_GUARD_MULTIPLIER.get() * guardBonus;
-        double workerDamage = Config.CITIZEN_BASE_DAMAGE.get() * Config.CITIZEN_WORKER_MULTIPLIER.get();
-        java.util.Random random = new java.util.Random();
-        spawnCitizensBatch(level, colony, state, hq, guards, guardDamage, true, random);
-        spawnCitizensBatch(level, colony, state, hq, workers, workerDamage, false, random);
-    }
-
-    private static void spawnCitizensBatch(ServerLevel level, Colony colony, RaidState state, BlockPos hq,
-                                           int count, double damage, boolean guard,
-                                           java.util.Random random) {
-        for (int i = 0; i < count; i++) {
-            CitizenEntity citizen = ModRegistry.CITIZEN_ENTITY.get().create(level);
-            if (citizen == null) {
-                continue;
-            }
-            double ang = random.nextDouble() * Math.PI * 2;
-            double r = 2 + random.nextDouble() * 4;
-            double x = hq.getX() + 0.5 + Math.cos(ang) * r;
-            double z = hq.getZ() + 0.5 + Math.sin(ang) * r;
-            citizen.moveTo(x, hq.getY(), z, random.nextFloat() * 360, 0);
-            String name = NAMES[random.nextInt(NAMES.length)] + (guard ? "（守卫）" : "（民兵）");
-            citizen.setup(colony.uuid(), guard, name, damage);
-            if (guard) {
-                citizen.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(
-                        BuiltInRegistries.ITEM.get(ResourceLocation.withDefaultNamespace("iron_sword"))));
-            }
-            level.addFreshEntity(citizen);
-            state.citizenIds.add(citizen.getUUID());
-        }
-    }
-
-    /** 阵亡写回（06 §6：伤亡由真实战斗结算并写回人口，岗位自动释放=填充率随人口重算）。 */
+    /** 阵亡写回（06 §6：伤亡由真实战斗结算并写回人口，岗位自动释放=填充率随人口重算）。
+     * 仅处理 M6.4 临时参战体；M6.5 常驻市民走 CitizenManager.onCitizenDeath。 */
     public static void onCitizenDeath(CitizenEntity citizen) {
         if (!(citizen.level() instanceof ServerLevel level) || citizen.colonyUuid() == null) {
             return;
@@ -381,9 +335,12 @@ public final class RaidManager {
 
     private static void removeState(MinecraftServer server, RaidState state, Colony colony) {
         states.remove(state.colonyUuid);
-        // 清除参战/袭击实体
+        // 清除参战/袭击实体（M6.5 常驻市民 TAG_RESIDENT 不清除——战后继续生活）
         for (ServerLevel lvl : server.getAllLevels()) {
             for (var entity : lvl.getEntities().getAll()) {
+                if (entity.getTags().contains(pioneer.colony.citizen.CitizenManager.TAG_RESIDENT)) {
+                    continue;
+                }
                 if (entity.getTags().contains(TAG_RAID_MOB) || entity.getTags().contains(TAG_CITIZEN)) {
                     var data = entity.getPersistentData();
                     if (data.hasUUID("ColonyUUID") && (colony == null || data.getUUID("ColonyUUID").equals(state.colonyUuid))) {
@@ -397,6 +354,10 @@ public final class RaidManager {
     /** 无活跃袭击的标记实体自清（服务器重启后孤儿清理，join-event 调用）。 */
     public static void cleanupOrphan(net.minecraft.world.entity.Entity entity) {
         if (entity.level().isClientSide) {
+            return;
+        }
+        // M6.5 常驻市民是持久实体，不是袭击孤儿
+        if (entity.getTags().contains(pioneer.colony.citizen.CitizenManager.TAG_RESIDENT)) {
             return;
         }
         boolean tagged = entity.getTags().contains(TAG_RAID_MOB) || entity.getTags().contains(TAG_CITIZEN);
