@@ -22,31 +22,28 @@ struct Time {
     tick:i64
 }
 #[derive(Component)]
-struct Id(u16);
+pub struct  Id(u16);
 #[derive(Component)]
-struct Population(u32);
+pub struct Population(u32);
 #[derive(Component)]
-struct Funds(u32);
+pub struct Funds(u32);
 #[derive(Component)]
-struct HappinessLevel(f32);
+pub struct HappinessLevel(f32);
 #[derive(Component)]
-struct Food(u32);
+pub struct Food(u32);
 #[derive(Component)]
-struct Works(u32);
+pub struct Works(u32);
 
-struct PopulationsDelta {
-    entity: Entity,
-    delta: i32,
-}
-struct FundsDelta {
-    entity: Entity,
-    delta: i32,
-}
-struct HappinessLevelDelta {
-    entity: Entity,
-    level: i32,
-}
-struct FoodDelta {
-    entity: Entity,
-    delta: i32,
+pub struct EconomyDelta {
+
+    pub entity: Entity,
+
+    pub population: i32,
+
+    pub food: i32,
+
+    pub funds: i32,
+
+    pub happiness: f32,
+
 }
