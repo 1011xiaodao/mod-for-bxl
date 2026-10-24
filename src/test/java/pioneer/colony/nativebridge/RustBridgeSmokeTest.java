@@ -21,7 +21,14 @@ public final class RustBridgeSmokeTest {
         double fairPrice = RustBridge.calculateMarketFairPriceOrFallback(100.0, 0.0, 0.0);
         requireClose("市场合理价格", fairPrice, 100.0);
 
-        System.out.println("Rust FFM 桥接冒烟测试通过：ABI、幸福度和市场价格计算均正常。");
+        String jsonResult = RustBridge.invokeJson("calculate_happiness",
+                "{\"base\":25,\"heatingWeight\":35,\"heatingRate\":0.5,"
+                        + "\"foodWeight\":25,\"foodRate\":1,\"housingWeight\":15,\"housingRate\":1}");
+        if (!jsonResult.contains("\"ok\":true") || !jsonResult.contains("82.5")) {
+            throw new IllegalStateException("Rust 通用 JSON 接口返回异常：" + jsonResult);
+        }
+
+        System.out.println("Rust FFM 桥接冒烟测试通过：ABI、固定签名、通用 JSON 调用和字符串释放均正常。");
     }
 
     private static void requireClose(String name, double actual, double expected) {

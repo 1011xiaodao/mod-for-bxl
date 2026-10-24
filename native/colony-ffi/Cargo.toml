@@ -8,3 +8,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 colony-core = { path = "../colony-core" }
+serde_json.workspace = true

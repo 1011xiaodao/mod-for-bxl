@@ -39,6 +39,11 @@ tasks.register('buildRustNative', Exec) {
     workingDir projectDir
     commandLine (rustCargoFile != null ? rustCargoFile.absolutePath : rustCargoName),
             'build', '--release', '--manifest-path', 'native/Cargo.toml', '-p', 'colony-ffi'
+    inputs.files(fileTree('native') {
+        include '**/*.rs'
+        include '**/Cargo.toml'
+        include 'Cargo.lock'
+    })
     outputs.dir(rustNativeResources)
     onlyIf {
         if (rustCargoFile == null) {

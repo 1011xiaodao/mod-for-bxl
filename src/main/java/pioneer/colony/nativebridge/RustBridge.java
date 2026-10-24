@@ -5,6 +5,7 @@ import java.io.InputStream;
 import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;
+import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SymbolLookup;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
@@ -26,8 +27,9 @@ import org.slf4j.Logger;
  * 不会因为缺少本机库而阻止模组启动。</p>
  */
 public final class RustBridge {
-    private static final int EXPECTED_ABI_VERSION = 1;
+    private static final int EXPECTED_ABI_VERSION = 2;
     private static final AtomicBoolean RUNTIME_FAILURE_LOGGED = new AtomicBoolean();
+    private static final long MAX_JSON_RESPONSE_BYTES = 1_048_576;
     private static final System.Logger FALLBACK_LOGGER = System.getLogger("pioneer_colony");
     private static volatile Logger modLogger;
     private static final LoadResult LOAD_RESULT = load();
@@ -123,6 +125,41 @@ public final class RustBridge {
         }
     }
 
+    /**
+     * 通用 Rust 业务入口。Rust 侧按 operation 分发 JSON 请求；新增 Rust 算法无需新增 Java FFM 符号。
+     * 返回值是 JSON 响应，格式为 {\"ok\":true,\"value\":...} 或 {\"ok\":false,\"error\":...}。
+     */
+    public static String invokeJson(String operation, String inputJson) {
+        if (operation == null || operation.isBlank() || inputJson == null) {
+            return "{\"ok\":false,\"error\":\"invalid_java_argument\"}";
+        }
+        if (API == null) {
+            return "{\"ok\":false,\"error\":\"native_unavailable\"}";
+        }
+
+        MemorySegment output = MemorySegment.NULL;
+        try (Arena callArena = Arena.ofConfined()) {
+            MemorySegment operationSegment = callArena.allocateFrom(operation);
+            MemorySegment inputSegment = callArena.allocateFrom(inputJson);
+            output = (MemorySegment) API.callJson().invokeExact(operationSegment, inputSegment);
+            if (output == null || output.equals(MemorySegment.NULL)) {
+                throw new IllegalStateException("Rust JSON 接口返回空指针");
+            }
+            return output.reinterpret(MAX_JSON_RESPONSE_BYTES).getString(0);
+        } catch (Throwable error) {
+            logRuntimeFallback(error);
+            return "{\"ok\":false,\"error\":\"native_call_failed\"}";
+        } finally {
+            if (output != null && !output.equals(MemorySegment.NULL)) {
+                try {
+                    API.freeString().invokeExact(output);
+                } catch (Throwable error) {
+                    logRuntimeFallback(error);
+                }
+            }
+        }
+    }
+
     private static void logRuntimeFallback(Throwable error) {
         if (RUNTIME_FAILURE_LOGGED.compareAndSet(false, true)) {
             if (modLogger != null) {
@@ -173,7 +210,17 @@ public final class RustBridge {
                     FunctionDescriptor.of(ValueLayout.JAVA_DOUBLE,
                             ValueLayout.JAVA_DOUBLE, ValueLayout.JAVA_DOUBLE, ValueLayout.JAVA_DOUBLE));
 
-            return new LoadResult(new NativeApi(abiVersion, happiness, marketFairPrice, arena), "加载成功");
+            MethodHandle callJson = linker.downcallHandle(
+                    lookup.find("colony_core_call_json").orElseThrow(
+                            () -> new IllegalStateException("原生库缺少通用 JSON 调用符号")),
+                    FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+            MethodHandle freeString = linker.downcallHandle(
+                    lookup.find("colony_core_free_string").orElseThrow(
+                            () -> new IllegalStateException("原生库缺少字符串释放符号")),
+                    FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
+
+            return new LoadResult(new NativeApi(
+                    abiVersion, happiness, marketFairPrice, callJson, freeString, arena), "加载成功");
         } catch (Throwable error) {
             arena.close();
             String detail = error.getMessage();
@@ -234,6 +281,8 @@ public final class RustBridge {
             int abiVersion,
             MethodHandle calculateHappiness,
             MethodHandle calculateMarketFairPrice,
+            MethodHandle callJson,
+            MethodHandle freeString,
             Arena arena) {
     }
 
