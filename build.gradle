@@ -17,6 +17,11 @@ java {
     }
 }
 
+dependencies {
+    // Minecraft 在运行时提供 Gson；为独立桥接冒烟测试显式声明相同版本。
+    testImplementation 'com.google.code.gson:gson:2.10.1'
+}
+
 // Rust 原生桥接：FFM 在 Java 25 中已稳定，不使用 JNI。
 // 没有安装 Rust 工具链时允许正常构建，模组会自动回退到 Java 公式。
 def rustCargoName = System.getProperty('os.name', '').toLowerCase(Locale.ROOT).contains('win') ? 'cargo.exe' : 'cargo'

@@ -16,6 +16,7 @@ import pioneer.colony.colony.Colony;
 import pioneer.colony.colony.ColonySavedData;
 import pioneer.colony.colony.ItemCost;
 import pioneer.colony.config.Config;
+import pioneer.colony.nativebridge.RustEconomyAdapter;
 
 /**
  * 经济 tick（06 §3.3）：每 60s 对每个殖民地跑一轮纯数据公式运算——
@@ -154,11 +155,12 @@ public final class EconomyTicker {
         double housingRate = colony.getPopulation() > 0
                 ? Math.min(1.0, residentSlots / (double) Math.max(1, colony.getPopulation()))
                 : 1.0;
-        double happiness = pioneer.colony.nativebridge.RustBridge.calculateHappinessOrFallback(
-                Config.HAPPINESS_BASE.get(),
-                Config.HAPPINESS_HEATING_WEIGHT.get(), 0.5,
-                Config.HAPPINESS_FOOD_WEIGHT.get(), foodRate,
-                Config.HAPPINESS_HOUSING_WEIGHT.get(), housingRate);
+        double happiness = RustEconomyAdapter.calculateHappiness(
+                new RustEconomyAdapter.HappinessInput(
+                        Config.HAPPINESS_BASE.get(),
+                        Config.HAPPINESS_HEATING_WEIGHT.get(), 0.5,
+                        Config.HAPPINESS_FOOD_WEIGHT.get(), foodRate,
+                        Config.HAPPINESS_HOUSING_WEIGHT.get(), housingRate));
         colony.setHappiness(happiness);
         double happinessMultiplier = 0.5 + happiness / 100.0;
 

@@ -8,9 +8,9 @@ import java.util.Map;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.SimpleJsonResourceReloadListener;
-import net.minecraft.util.GsonHelper;
 import net.minecraft.util.profiling.ProfilerFiller;
 import pioneer.colony.PioneerColony;
+import pioneer.colony.nativebridge.RustMarketAdapter;
 
 /**
  * 星联市场价目表（06 §7.2/§6）：datapack data/&lt;ns&gt;/pioneer_colony/market/*.json。
@@ -42,7 +42,8 @@ public final class MarketPrices extends SimpleJsonResourceReloadListener {
                     double base = o.get("base_price").getAsDouble();
                     double min = o.has("min") ? o.get("min").getAsDouble() : 0;
                     double max = o.has("max") ? o.get("max").getAsDouble() : Double.MAX_VALUE;
-                    if (base < 0 || min < 0 || max < min) {
+                    if (!Double.isFinite(base) || !Double.isFinite(min) || Double.isNaN(max)
+                            || base < 0 || min < 0 || max < min) {
                         throw new IllegalArgumentException("价格区间非法：" + item);
                     }
                     loaded.put(item, new PriceEntry(base, min, max));
@@ -58,6 +59,30 @@ public final class MarketPrices extends SimpleJsonResourceReloadListener {
     public static double basePrice(String item) {
         PriceEntry e = prices.get(item);
         return e == null ? 0 : e.basePrice;
+    }
+
+    /**
+     * 按行情得分计算参考成交价，并应用数据包定义的价格上下限。
+     * 该方法供后续市场撮合调用；威胁值估算继续使用 basePrice，避免行情波动影响袭击难度。
+     */
+    public static double price(String item, double marketScore, double sectorScore) {
+        PriceEntry entry = prices.get(item);
+        if (entry == null) {
+            return 0.0;
+        }
+        double fairPrice = RustMarketAdapter.calculateFairPrice(
+                entry.basePrice(), marketScore, sectorScore);
+        return RustMarketAdapter.clampToConfiguredRange(fairPrice, entry.min(), entry.max());
+    }
+
+    public static double minPrice(String item) {
+        PriceEntry entry = prices.get(item);
+        return entry == null ? 0.0 : entry.min();
+    }
+
+    public static double maxPrice(String item) {
+        PriceEntry entry = prices.get(item);
+        return entry == null ? 0.0 : entry.max();
     }
 
     public static boolean isListed(String item) {

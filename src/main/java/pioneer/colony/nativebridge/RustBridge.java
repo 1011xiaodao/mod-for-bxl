@@ -75,10 +75,16 @@ public final class RustBridge {
             double foodRate,
             double housingWeight,
             double housingRate) {
+        if (!allFinite(base, heatingWeight, heatingRate, foodWeight, foodRate, housingWeight, housingRate)) {
+            return 0.0;
+        }
         double fallback = base
                 + heatingWeight * heatingRate
                 + foodWeight * foodRate
                 + housingWeight * housingRate;
+        if (!Double.isFinite(fallback)) {
+            fallback = 0.0;
+        }
 
         if (API == null) {
             return fallback;
@@ -105,8 +111,15 @@ public final class RustBridge {
      */
     public static double calculateMarketFairPriceOrFallback(
             double basePrice, double marketScore, double sectorScore) {
+        if (!allFinite(basePrice, marketScore, sectorScore) || basePrice < 0.0) {
+            return 0.01;
+        }
         double factor = clamp(1.0 + 0.22 * marketScore + 0.48 * sectorScore, 0.55, 1.85);
-        double fallback = Math.max(0.01, basePrice * factor);
+        double rawFallback = basePrice * factor;
+        if (!Double.isFinite(rawFallback)) {
+            return 0.01;
+        }
+        double fallback = Math.max(0.01, rawFallback);
 
         if (API == null) {
             return fallback;
@@ -271,6 +284,15 @@ public final class RustBridge {
             default -> archName;
         };
         return os + "-" + arch;
+    }
+
+    private static boolean allFinite(double... values) {
+        for (double value : values) {
+            if (!Double.isFinite(value)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static double clamp(double value, double min, double max) {
