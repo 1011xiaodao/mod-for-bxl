@@ -1,3 +1,1 @@
-use bevy_ecs::prelude::*;
-// Economy simulation
-
+//! 经济模拟：在这里实现纯数据输入到经济增量的计算。

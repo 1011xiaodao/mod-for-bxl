@@ -16,6 +16,7 @@ python tools/neoforged_maven_proxy.py   # 开发机网络适配：先启动 NeoF
 - 开发机网络说明（Java TLS 直连 maven.neoforged.net 被重置的规避方案）：`tools/README.md`
 - 数值全部参数化：建筑/袭击/市场走 datapack JSON，全局参数走 config——调值见 `docs/数值速调手册.md`
 - 服务端冒烟/验收工具：`tools/rcon.py`
+- Rust 核心与 Java 25 FFM 桥接开发说明：`native/README.md`（`colony-core` 写纯 Rust 业务计算，`colony-ffi` 负责 C ABI，Java 统一经 `RustBridge` 调用）
 
 ## 文档
 

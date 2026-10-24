@@ -17,6 +17,73 @@ java {
     }
 }
 
+// Rust 原生桥接：FFM 在 Java 25 中已稳定，不使用 JNI。
+// 没有安装 Rust 工具链时允许正常构建，模组会自动回退到 Java 公式。
+def rustCargoName = System.getProperty('os.name', '').toLowerCase(Locale.ROOT).contains('win') ? 'cargo.exe' : 'cargo'
+def rustCargoCandidates = (System.getenv('PATH') ?: '').split(File.pathSeparator)
+        .collect { new File(it, rustCargoName) }
+rustCargoCandidates.add(new File(new File(System.getProperty('user.home'), '.cargo/bin'), rustCargoName))
+def rustCargoFile = rustCargoCandidates.find { it.isFile() }
+def rustNativeOsName = System.getProperty('os.name', '').toLowerCase(Locale.ROOT)
+def rustNativeOs = rustNativeOsName.contains('win') ? 'windows'
+        : (rustNativeOsName.contains('mac') || rustNativeOsName.contains('darwin')) ? 'macos' : 'linux'
+def rustNativeArchName = System.getProperty('os.arch', '').toLowerCase(Locale.ROOT)
+def rustNativeArch = ['amd64', 'x86_64', 'x64'].contains(rustNativeArchName) ? 'x86_64'
+        : (['aarch64', 'arm64'].contains(rustNativeArchName) ? 'aarch64' : rustNativeArchName)
+def rustNativePlatform = "${rustNativeOs}-${rustNativeArch}"
+def rustNativeResources = layout.buildDirectory.dir('generated/native-resources')
+
+tasks.register('buildRustNative', Exec) {
+    group = 'build'
+    description = '编译当前平台的 Rust 动态库并准备打包资源；未安装 Cargo 时自动跳过。'
+    workingDir projectDir
+    commandLine (rustCargoFile != null ? rustCargoFile.absolutePath : rustCargoName),
+            'build', '--release', '--manifest-path', 'native/Cargo.toml', '-p', 'colony-ffi'
+    outputs.dir(rustNativeResources)
+    onlyIf {
+        if (rustCargoFile == null) {
+            logger.lifecycle('未找到 Cargo，跳过 Rust 原生库编译；Java 回退模式仍可正常构建。')
+        }
+        rustCargoFile != null
+    }
+    doLast {
+        def nativeLibrary = file("native/target/release/${System.mapLibraryName('colony_ffi')}")
+        if (!nativeLibrary.isFile()) {
+            throw new GradleException("Rust 编译结束但没有找到动态库：${nativeLibrary}")
+        }
+        copy {
+            from nativeLibrary
+            into rustNativeResources.get().dir("META-INF/native/${rustNativePlatform}")
+        }
+        logger.lifecycle("已准备 Rust 原生库：META-INF/native/${rustNativePlatform}/${nativeLibrary.name}")
+    }
+}
+
+tasks.named('processResources') {
+    dependsOn tasks.named('buildRustNative')
+    from(rustNativeResources)
+}
+
+tasks.named('test', Test) {
+    // 项目使用独立 JavaExec 冒烟测试验证 FFM，不要求额外引入 JUnit。
+    failOnNoDiscoveredTests = false
+}
+
+tasks.register('nativeBridgeSmokeTest', JavaExec) {
+    group = 'verification'
+    description = '用 Java 25 实际加载 Rust 动态库并验证 FFM ABI 与计算结果。'
+    dependsOn tasks.named('testClasses')
+    dependsOn tasks.named('buildRustNative')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'pioneer.colony.nativebridge.RustBridgeSmokeTest'
+    jvmArgs '--enable-native-access=ALL-UNNAMED'
+    onlyIf { rustCargoFile != null }
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('nativeBridgeSmokeTest')
+}
+
 neoForge {
     version = project.neo_version
 
@@ -28,9 +95,11 @@ neoForge {
     runs {
         client {
             client()
+            jvmArgument '--enable-native-access=ALL-UNNAMED'
         }
         server {
             server()
+            jvmArgument '--enable-native-access=ALL-UNNAMED'
             programArgument '--nogui'
         }
     }

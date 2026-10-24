@@ -25,5 +25,8 @@ public final class PioneerColony {
         pioneer.colony.registry.ModRegistry.MENUS.register(modEventBus);
         pioneer.colony.registry.ModRegistry.CREATIVE_TABS.register(modEventBus);
         pioneer.colony.registry.ModRegistry.ENTITIES.register(modEventBus);
+
+        // Rust 使用 Java 25 稳定版 FFM API 桥接；原生库缺失时自动使用 Java 回退公式。
+        pioneer.colony.nativebridge.RustBridge.initialize(LOGGER);
     }
 }

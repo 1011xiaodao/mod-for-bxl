@@ -1,8 +1,6 @@
 use thiserror::Error;
 
-
 #[derive(Debug, Error)]
-
 pub enum Error {
     #[error("输入数据非法 {0}")]
     InvalidArgument(String),

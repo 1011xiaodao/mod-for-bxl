@@ -154,10 +154,11 @@ public final class EconomyTicker {
         double housingRate = colony.getPopulation() > 0
                 ? Math.min(1.0, residentSlots / (double) Math.max(1, colony.getPopulation()))
                 : 1.0;
-        double happiness = Config.HAPPINESS_BASE.get()
-                + Config.HAPPINESS_HEATING_WEIGHT.get() * 0.5
-                + Config.HAPPINESS_FOOD_WEIGHT.get() * foodRate
-                + Config.HAPPINESS_HOUSING_WEIGHT.get() * housingRate;
+        double happiness = pioneer.colony.nativebridge.RustBridge.calculateHappinessOrFallback(
+                Config.HAPPINESS_BASE.get(),
+                Config.HAPPINESS_HEATING_WEIGHT.get(), 0.5,
+                Config.HAPPINESS_FOOD_WEIGHT.get(), foodRate,
+                Config.HAPPINESS_HOUSING_WEIGHT.get(), housingRate);
         colony.setHappiness(happiness);
         double happinessMultiplier = 0.5 + happiness / 100.0;
 
