@@ -1,0 +1,7 @@
+{
+  "input": [
+    { "item": "minecraft:wheat", "count": 3 }
+  ],
+  "output": { "item": "minecraft:bread", "count": 1 },
+  "batches_per_minute_per_worker": 0.5
+}

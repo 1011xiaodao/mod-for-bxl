@@ -45,11 +45,69 @@ public final class ColonyCommands {
     }
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
+        var treatyReturnPerHour = Commands.argument("returnPerHour", LongArgumentType.longArg(0))
+                .executes(ctx -> treatyPropose(ctx.getSource(),
+                        StringArgumentType.getString(ctx, "targetPlayer"),
+                        StringArgumentType.getString(ctx, "exportItem"),
+                        LongArgumentType.getLong(ctx, "exportPerHour"),
+                        StringArgumentType.getString(ctx, "returnItem"),
+                        LongArgumentType.getLong(ctx, "returnPerHour")));
+        var treatyReturnItem = Commands.argument("returnItem", StringArgumentType.string()).then(treatyReturnPerHour);
+        var treatyExportPerHour = Commands.argument("exportPerHour", LongArgumentType.longArg(1)).then(treatyReturnItem);
+        var treatyExportItem = Commands.argument("exportItem", StringArgumentType.string()).then(treatyExportPerHour);
+        var treatyTarget = Commands.argument("targetPlayer", StringArgumentType.string()).then(treatyExportItem);
+        LiteralArgumentBuilder<CommandSourceStack> treatyCommand = Commands.literal("treaty")
+                .then(Commands.literal("list").executes(ctx -> treatyList(ctx.getSource())))
+                .then(Commands.literal("propose").then(treatyTarget))
+                .then(Commands.literal("accept")
+                        .then(Commands.argument("id", LongArgumentType.longArg(1))
+                                .executes(ctx -> treatyAccept(ctx.getSource(), LongArgumentType.getLong(ctx, "id")))))
+                .then(Commands.literal("terminate")
+                        .then(Commands.argument("id", LongArgumentType.longArg(1))
+                                .executes(ctx -> treatyTerminate(ctx.getSource(), LongArgumentType.getLong(ctx, "id")))));
         LiteralArgumentBuilder<CommandSourceStack> root = Commands.literal("colony")
                 .then(Commands.literal("create")
                         .then(Commands.argument("name", StringArgumentType.string())
                                 .executes(ctx -> create(ctx.getSource(), StringArgumentType.getString(ctx, "name")))))
                 .then(Commands.literal("info").executes(ctx -> info(ctx.getSource())))
+                .then(Commands.literal("gauge")
+                        .executes(ctx -> gaugeList(ctx.getSource()))
+                        .then(Commands.argument("id", StringArgumentType.string())
+                                .executes(ctx -> gaugeInfo(ctx.getSource(), StringArgumentType.getString(ctx, "id")))))
+                .then(Commands.literal("market")
+                        .then(Commands.literal("prices").executes(ctx -> marketPrices(ctx.getSource())))
+                        .then(Commands.literal("price")
+                                .then(Commands.argument("item", StringArgumentType.string())
+                                        .executes(ctx -> marketPrice(ctx.getSource(), StringArgumentType.getString(ctx, "item")))))
+                        .then(Commands.literal("orders").executes(ctx -> marketOrders(ctx.getSource())))
+                        .then(Commands.literal("book")
+                                .then(Commands.argument("item", StringArgumentType.string())
+                                        .executes(ctx -> marketBook(ctx.getSource(), StringArgumentType.getString(ctx, "item")))))
+                        .then(Commands.literal("buy")
+                                .then(Commands.argument("item", StringArgumentType.string())
+                                        .then(Commands.argument("count", LongArgumentType.longArg(1))
+                                                .then(Commands.argument("price", LongArgumentType.longArg(0))
+                                                        .then(Commands.argument("days", IntegerArgumentType.integer(1, 14))
+                                                                .executes(ctx -> marketPlace(ctx.getSource(),
+                                                                        StringArgumentType.getString(ctx, "item"),
+                                                                        LongArgumentType.getLong(ctx, "count"),
+                                                                        LongArgumentType.getLong(ctx, "price"),
+                                                                        IntegerArgumentType.getInteger(ctx, "days"), true)))))))
+                        .then(Commands.literal("sell")
+                                .then(Commands.argument("item", StringArgumentType.string())
+                                        .then(Commands.argument("count", LongArgumentType.longArg(1))
+                                                .then(Commands.argument("price", LongArgumentType.longArg(0))
+                                                        .then(Commands.argument("days", IntegerArgumentType.integer(1, 14))
+                                                                .executes(ctx -> marketPlace(ctx.getSource(),
+                                                                        StringArgumentType.getString(ctx, "item"),
+                                                                        LongArgumentType.getLong(ctx, "count"),
+                                                                        LongArgumentType.getLong(ctx, "price"),
+                                                                        IntegerArgumentType.getInteger(ctx, "days"), false)))))))
+                        .then(Commands.literal("cancel")
+                                .then(Commands.argument("id", LongArgumentType.longArg(1))
+                                        .executes(ctx -> marketCancel(ctx.getSource(), LongArgumentType.getLong(ctx, "id")))))
+                )
+                .then(treatyCommand)
                 .then(Commands.literal("list").requires(s -> s.hasPermission(2))
                         .executes(ctx -> list(ctx.getSource())))
                 .then(Commands.literal("tick").requires(s -> s.hasPermission(2))
@@ -104,15 +162,21 @@ public final class ColonyCommands {
                                                 .executes(ctx -> chunkAbandon(ctx.getSource(),
                                                         IntegerArgumentType.getInteger(ctx, "cx"),
                                                         IntegerArgumentType.getInteger(ctx, "cz")))))))
-                .then(Commands.literal("trust").requires(s -> s.hasPermission(2))
+                .then(Commands.literal("trust")
                         .then(Commands.literal("add")
-                                .then(Commands.argument("player", StringArgumentType.string())
+                                .then(Commands.argument("player", StringArgumentType.word())
                                         .executes(ctx -> trust(ctx.getSource(),
-                                                StringArgumentType.getString(ctx, "player"), true))))
+                                                StringArgumentType.getString(ctx, "player"), true, "trusted"))
+                                        .then(Commands.argument("role", StringArgumentType.word())
+                                                .suggests((ctx, builder) -> SharedSuggestionProvider.suggest(
+                                                        java.util.List.of("visitor", "trusted"), builder))
+                                                .executes(ctx -> trust(ctx.getSource(),
+                                                        StringArgumentType.getString(ctx, "player"), true,
+                                                        StringArgumentType.getString(ctx, "role"))))))
                         .then(Commands.literal("remove")
-                                .then(Commands.argument("player", StringArgumentType.string())
+                                .then(Commands.argument("player", StringArgumentType.word())
                                         .executes(ctx -> trust(ctx.getSource(),
-                                                StringArgumentType.getString(ctx, "player"), false))))
+                                                StringArgumentType.getString(ctx, "player"), false, ""))))
                         .then(Commands.literal("list")
                                 .executes(ctx -> trustList(ctx.getSource()))))
                 .then(Commands.literal("build").requires(s -> s.hasPermission(2))
@@ -188,6 +252,8 @@ public final class ColonyCommands {
                                                 StringArgumentType.getString(ctx, "id")))))
                         .then(Commands.literal("debugfinish").requires(s -> s.hasPermission(2))
                                 .executes(ctx -> researchDebugFinish(ctx.getSource()))))
+                .then(Commands.literal("benchmark").requires(s -> s.hasPermission(2))
+                        .executes(ctx -> economyBenchmark(ctx.getSource())))
                 .then(Commands.literal("withdraw").requires(s -> s.hasPermission(2))
                         .then(Commands.argument("item", StringArgumentType.string())
                                 .executes(ctx -> withdraw(ctx.getSource(), StringArgumentType.getString(ctx, "item"), Long.MAX_VALUE))
@@ -526,23 +592,47 @@ public final class ColonyCommands {
         return 0;
     }
 
-    private static int trust(CommandSourceStack source, String playerName, boolean add) {
+    private static int trust(CommandSourceStack source, String playerName, boolean add, String roleName) {
         Colony colony = resolveColony(source);
         if (colony == null) {
             source.sendFailure(Component.literal("没有目标殖民地。"));
             return 0;
         }
+        if (!canManageTrust(source, colony)) {
+            source.sendFailure(Component.literal("只有殖民地总督可以管理信任名单。"));
+            return 0;
+        }
         var profile = source.getServer().getProfileCache().get(playerName);
         if (profile.isEmpty()) {
-            source.sendFailure(Component.literal("找不到玩家：" + playerName));
+            source.sendFailure(Component.literal("找不到玩家档案：" + playerName + "。请确认该玩家曾进入过服务器。"));
             return 0;
         }
         UUID uuid = profile.get().getId();
+        if (colony.isOwner(uuid)) {
+            source.sendFailure(Component.literal("总督不能被加入自己的信任名单。"));
+            return 0;
+        }
         if (add) {
-            colony.setTrust(uuid, Colony.Trust.TRUSTED);
-            source.sendSuccess(() -> Component.literal(playerName + " 已授予「可信」权限（可开建筑 GUI 收货）。"), true);
+            Colony.Trust role = switch (roleName.toLowerCase(java.util.Locale.ROOT)) {
+                case "visitor" -> Colony.Trust.VISITOR;
+                case "trusted" -> Colony.Trust.TRUSTED;
+                default -> null;
+            };
+            if (role == null) {
+                source.sendFailure(Component.literal("权限等级无效，请使用 visitor 或 trusted。"));
+                return 0;
+            }
+            colony.setTrust(uuid, role);
+            ColonySavedData.get(source.getServer()).setDirty();
+            String label = role == Colony.Trust.VISITOR ? "访客（领地通行、贸易站交互）" : "可信（可开建筑 GUI 收货）";
+            source.sendSuccess(() -> Component.literal(playerName + " 已加入信任名单，权限：" + label + "。"), true);
         } else {
+            if (colony.trustOf(uuid) == null) {
+                source.sendFailure(Component.literal(playerName + " 不在信任名单中。"));
+                return 0;
+            }
             colony.setTrust(uuid, null);
+            ColonySavedData.get(source.getServer()).setDirty();
             source.sendSuccess(() -> Component.literal(playerName + " 的信任授权已移除。"), true);
         }
         return 1;
@@ -554,17 +644,31 @@ public final class ColonyCommands {
             source.sendFailure(Component.literal("没有目标殖民地。"));
             return 0;
         }
+        if (!canManageTrust(source, colony)) {
+            source.sendFailure(Component.literal("只有殖民地总督可以查看信任名单。"));
+            return 0;
+        }
         if (colony.trustEntries().isEmpty()) {
-            source.sendSuccess(() -> Component.literal("信任名单为空（访客默认可通行与贸易站交互）。"), false);
+            source.sendSuccess(() -> Component.literal("信任名单为空。"), false);
             return 1;
         }
-        StringBuilder sb = new StringBuilder("信任名单（可信）:");
+        StringBuilder sb = new StringBuilder("信任名单：");
         colony.trustEntries().forEach((uuid, level) -> {
-            var p = source.getServer().getPlayerList().getPlayer(uuid);
-            sb.append(' ').append(p != null ? p.getName().getString() : uuid).append("(可信)");
+            var online = source.getServer().getPlayerList().getPlayer(uuid);
+            String name = online != null ? online.getName().getString()
+                    : source.getServer().getProfileCache().get(uuid).map(p -> p.getName()).orElse(uuid.toString());
+            String role = level == Colony.Trust.VISITOR ? "访客" : "可信";
+            sb.append(' ').append(name).append('(').append(role).append(')');
         });
         source.sendSuccess(() -> Component.literal(sb.toString()), false);
         return 1;
+    }
+
+    private static boolean canManageTrust(CommandSourceStack source, Colony colony) {
+        if (source.hasPermission(2)) {
+            return true;
+        }
+        return source.getEntity() instanceof ServerPlayer player && colony.isOwner(player.getUUID());
     }
 
     private static int build(CommandSourceStack source, String defId, int tier, boolean free) {
@@ -819,6 +923,18 @@ public final class ColonyCommands {
         return 1;
     }
 
+    /** OP：合成 10×20 经济结算负载基准，不修改真实殖民地。 */
+    private static int economyBenchmark(CommandSourceStack source) {
+        try {
+            var result = pioneer.colony.economy.EconomyBenchmark.run(source.getServer());
+            source.sendSuccess(() -> Component.literal(result.describe()), true);
+            return 1;
+        } catch (IllegalStateException error) {
+            source.sendFailure(Component.literal("经济基准无法运行：" + error.getMessage()));
+            return 0;
+        }
+    }
+
     /** OP 调试：打印 build 命令将选中的放置点与重叠判定明细。 */
     private static int debugOrigin(CommandSourceStack source, String defId) {
         ServerLevel level = source.getLevel();
@@ -907,6 +1023,241 @@ public final class ColonyCommands {
             source.sendSuccess(() -> line, false);
         }
         return 1;
+    }
+
+    // —— 城市间贸易协定（M6.8）——
+
+    private static int treatyPropose(CommandSourceStack source, String targetName, String exportItem,
+                                     long exportPerHour, String returnItem, long returnPerHour) {
+        if (!(source.getEntity() instanceof ServerPlayer player)) {
+            source.sendFailure(Component.literal("发起贸易协定需要玩家执行。"));
+            return 0;
+        }
+        var profile = source.getServer().getProfileCache().get(targetName).orElse(null);
+        if (profile == null) {
+            source.sendFailure(Component.literal("找不到玩家档案：" + targetName + "（对方需至少进入过一次服务器）。"));
+            return 0;
+        }
+        Colony from = ColonyManager.colonyOf(source.getServer(), player.getUUID());
+        Colony to = ColonyManager.colonyOf(source.getServer(), profile.getId());
+        if (to == null) {
+            source.sendFailure(Component.literal("目标玩家没有殖民地：" + targetName));
+            return 0;
+        }
+        var result = pioneer.colony.market.TradeTreatyManager.propose(
+                source.getServer(), from, player, to, exportItem, exportPerHour, returnItem, returnPerHour);
+        if (result.success()) {
+            source.sendSuccess(() -> Component.literal(result.message()), true);
+            return 1;
+        }
+        source.sendFailure(Component.literal(result.message()));
+        return 0;
+    }
+
+    private static int treatyAccept(CommandSourceStack source, long id) {
+        if (!(source.getEntity() instanceof ServerPlayer player)) {
+            source.sendFailure(Component.literal("确认邀约需要玩家执行。"));
+            return 0;
+        }
+        Colony colony = ColonyManager.colonyOf(source.getServer(), player.getUUID());
+        var result = pioneer.colony.market.TradeTreatyManager.accept(source.getServer(), colony, player, id);
+        if (result.success()) {
+            source.sendSuccess(() -> Component.literal(result.message()), true);
+            return 1;
+        }
+        source.sendFailure(Component.literal(result.message()));
+        return 0;
+    }
+
+    private static int treatyTerminate(CommandSourceStack source, long id) {
+        if (!(source.getEntity() instanceof ServerPlayer player)) {
+            source.sendFailure(Component.literal("解约需要玩家执行。"));
+            return 0;
+        }
+        Colony colony = ColonyManager.colonyOf(source.getServer(), player.getUUID());
+        var result = pioneer.colony.market.TradeTreatyManager.terminate(source.getServer(), colony, player, id);
+        if (result.success()) {
+            source.sendSuccess(() -> Component.literal(result.message()), true);
+            return 1;
+        }
+        source.sendFailure(Component.literal(result.message()));
+        return 0;
+    }
+
+    private static int treatyList(CommandSourceStack source) {
+        Colony colony = resolveColony(source);
+        if (colony == null) {
+            source.sendFailure(Component.literal("请先创建殖民地。"));
+            return 0;
+        }
+        var treaties = pioneer.colony.market.TradeTreatyManager.treatiesFor(source.getServer(), colony);
+        if (treaties.isEmpty()) {
+            source.sendSuccess(() -> Component.literal("当前没有贸易协定或待确认邀约。"), false);
+            return 1;
+        }
+        var saved = ColonySavedData.get(source.getServer());
+        source.sendSuccess(() -> Component.literal("贸易协定（" + treaties.size() + "）："), false);
+        for (var treaty : treaties) {
+            Colony from = saved.colonyByUuid(treaty.fromColony());
+            Colony to = saved.colonyByUuid(treaty.toColony());
+            String fromName = from == null ? "已不存在" : from.getName();
+            String toName = to == null ? "已不存在" : to.getName();
+            String status = switch (treaty.status()) {
+                case INVITED -> "待确认";
+                case ACTIVE -> "履约中";
+                case TERMINATING -> "解约通知期";
+            };
+            String line = "#" + treaty.id() + " " + status + " " + fromName + " → " + toName
+                    + "：" + treaty.exportItem() + " " + treaty.exportPerHour() + "/小时，返还 "
+                    + (treaty.returnItem().isBlank() ? "无" : treaty.returnItem() + " " + treaty.returnPerHour() + "/小时");
+            source.sendSuccess(() -> Component.literal(line), false);
+        }
+        return 1;
+    }
+
+    // —— 通用资源 Gauge（M6.9）——
+
+    private static int gaugeList(CommandSourceStack source) {
+        Colony colony = resolveColony(source);
+        if (colony == null) {
+            source.sendFailure(Component.literal("请先创建殖民地。"));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("殖民地资源 Gauge："), false);
+        for (var definition : pioneer.colony.gauge.GaugeRegistry.all().values()) {
+            var state = colony.gaugeSnapshot().get(definition.id());
+            String line = state == null
+                    ? definition.displayName() + "（" + definition.id() + "）：尚未初始化"
+                    : String.format("%s（%s）：%.1f/%.1f %s，产出 %.2f/分，消耗 %.2f/分，满足率 %.0f%%",
+                            definition.displayName(), definition.id(), state.stored(), state.capacity(), definition.unit(),
+                            state.productionPerMinute(), state.consumptionPerMinute(), state.satisfaction() * 100.0);
+            source.sendSuccess(() -> Component.literal(line), false);
+        }
+        return 1;
+    }
+
+    private static int gaugeInfo(CommandSourceStack source, String id) {
+        var definition = pioneer.colony.gauge.GaugeRegistry.get(id).orElse(null);
+        if (definition == null) {
+            source.sendFailure(Component.literal("未注册 Gauge：" + id));
+            return 0;
+        }
+        Colony colony = resolveColony(source);
+        if (colony == null) {
+            source.sendFailure(Component.literal("请先创建殖民地。"));
+            return 0;
+        }
+        var state = colony.gaugeSnapshot().get(id);
+        if (state == null) {
+            source.sendSuccess(() -> Component.literal(definition.displayName() + " 尚未初始化。"), false);
+            return 1;
+        }
+        source.sendSuccess(() -> Component.literal(String.format("%s：%.1f/%.1f %s；产出 %.2f/分；消耗 %.2f/分；满足率 %.0f%%",
+                definition.displayName(), state.stored(), state.capacity(), definition.unit(),
+                state.productionPerMinute(), state.consumptionPerMinute(), state.satisfaction() * 100.0)), false);
+        return 1;
+    }
+
+    // —— 星联市场（M6.7）——
+
+    private static int marketPrices(CommandSourceStack source) {
+        var server = source.getServer();
+        StringBuilder out = new StringBuilder("星联市场参考价格（信用点/件）：\n");
+        for (String item : pioneer.colony.market.MarketPrices.listedItems().stream().sorted().toList()) {
+            out.append(" · ").append(item).append("：").append(pioneer.colony.market.MarketSystem.currentPrice(server, item))
+                    .append("（区间 ").append(pioneer.colony.market.MarketPrices.minPrice(item)).append("～")
+                    .append(pioneer.colony.market.MarketPrices.maxPrice(item)).append("）\n");
+        }
+        source.sendSuccess(() -> Component.literal(out.toString()), false);
+        return 1;
+    }
+
+    private static int marketPrice(CommandSourceStack source, String item) {
+        if (!pioneer.colony.market.MarketPrices.isListed(item)) {
+            source.sendFailure(Component.literal("该物品不在市场白名单中：" + item));
+            return 0;
+        }
+        long price = pioneer.colony.market.MarketSystem.currentPrice(source.getServer(), item);
+        source.sendSuccess(() -> Component.literal(item + " 当前参考价：" + price + " 信用点/件（下限 "
+                + pioneer.colony.market.MarketPrices.minPrice(item) + "，上限 "
+                + pioneer.colony.market.MarketPrices.maxPrice(item) + "）。"), false);
+        return 1;
+    }
+
+    private static int marketOrders(CommandSourceStack source) {
+        Colony colony = resolveColony(source);
+        if (colony == null) {
+            source.sendFailure(Component.literal("请先创建殖民地。"));
+            return 0;
+        }
+        var orders = pioneer.colony.market.MarketSystem.ordersForColony(source.getServer(), colony);
+        if (orders.isEmpty()) {
+            source.sendSuccess(() -> Component.literal("当前没有未完成的市场挂单。"), false);
+            return 1;
+        }
+        source.sendSuccess(() -> Component.literal("你的市场挂单（" + orders.size() + "）："), false);
+        for (var order : orders) {
+            String side = order.side() == pioneer.colony.market.MarketSavedData.Side.BUY ? "买入" : "卖出";
+            String price = order.limitPrice() == 0 ? "市价" : "限价 " + order.limitPrice();
+            source.sendSuccess(() -> Component.literal("#" + order.id() + " " + side + " " + order.item()
+                    + " 剩余×" + order.remainingQuantity() + "，" + price + "，到期 "
+                    + new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm").format(new Date(order.expiresAt()))), false);
+        }
+        return 1;
+    }
+
+    private static int marketBook(CommandSourceStack source, String item) {
+        if (!pioneer.colony.market.MarketPrices.isListed(item)) {
+            source.sendFailure(Component.literal("该物品不在市场白名单中：" + item));
+            return 0;
+        }
+        var orders = pioneer.colony.market.MarketSystem.ordersForItem(source.getServer(), item);
+        source.sendSuccess(() -> Component.literal(item + " 订单簿（当前参考价 "
+                + pioneer.colony.market.MarketSystem.currentPrice(source.getServer(), item) + "）："), false);
+        if (orders.isEmpty()) {
+            source.sendSuccess(() -> Component.literal("暂无买卖挂单。"), false);
+            return 1;
+        }
+        for (var order : orders.stream().limit(20).toList()) {
+            String side = order.side() == pioneer.colony.market.MarketSavedData.Side.BUY ? "买" : "卖";
+            String price = order.limitPrice() == 0 ? "市价" : Long.toString(order.limitPrice());
+            source.sendSuccess(() -> Component.literal(side + "单 #" + order.id() + " ×"
+                    + order.remainingQuantity() + " @ " + price), false);
+        }
+        return 1;
+    }
+
+    private static int marketPlace(CommandSourceStack source, String item, long count, long price, int days, boolean buy) {
+        if (!(source.getEntity() instanceof ServerPlayer player)) {
+            source.sendFailure(Component.literal("挂单需要玩家执行。"));
+            return 0;
+        }
+        Colony colony = ColonyManager.colonyOf(source.getServer(), player.getUUID());
+        var side = buy ? pioneer.colony.market.MarketSavedData.Side.BUY
+                : pioneer.colony.market.MarketSavedData.Side.SELL;
+        var result = pioneer.colony.market.MarketSystem.placeOrder(
+                source.getServer(), colony, player, side, item, count, price, days);
+        if (result.success()) {
+            source.sendSuccess(() -> Component.literal(result.message()), true);
+            return 1;
+        }
+        source.sendFailure(Component.literal(result.message()));
+        return 0;
+    }
+
+    private static int marketCancel(CommandSourceStack source, long orderId) {
+        if (!(source.getEntity() instanceof ServerPlayer player)) {
+            source.sendFailure(Component.literal("撤单需要玩家执行。"));
+            return 0;
+        }
+        Colony colony = ColonyManager.colonyOf(source.getServer(), player.getUUID());
+        var result = pioneer.colony.market.MarketSystem.cancelOrder(source.getServer(), colony, player, orderId);
+        if (result.success()) {
+            source.sendSuccess(() -> Component.literal(result.message()), true);
+            return 1;
+        }
+        source.sendFailure(Component.literal(result.message()));
+        return 0;
     }
 
     private static Colony resolveColony(CommandSourceStack source) {

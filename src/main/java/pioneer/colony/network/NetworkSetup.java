@@ -17,5 +17,9 @@ public final class NetworkSetup {
         PayloadRegistrar registrar = event.registrar("1");
         registrar.playToClient(ColonyResearchPayload.TYPE, ColonyResearchPayload.STREAM_CODEC,
                 ClientResearchCache::handle);
+        registrar.playToClient(ColonyMarketPayload.TYPE, ColonyMarketPayload.STREAM_CODEC,
+                ClientMarketCache::handle);
+        registrar.playToServer(MarketActionPayload.TYPE, MarketActionPayload.STREAM_CODEC,
+                MarketActionPayload::handle);
     }
 }

@@ -35,6 +35,7 @@ public final class ColonyManager {
         int intervalTicks = Math.max(1, Config.ECONOMY_TICK_SECONDS.get()) * 20;
         if (serverTickCounter % intervalTicks == 0) {
             EconomyTicker.settleAll(server, false);
+            pioneer.colony.market.TradeTreatyManager.tickServer(server);
             if (pioneer.colony.research.ResearchIntegration.mode() == pioneer.colony.research.ResearchIntegration.Mode.STUB) {
                 pioneer.colony.research.StubResearchSystem.tickServer(server);
             }
@@ -44,6 +45,8 @@ public final class ColonyManager {
             pioneer.colony.raid.RaidManager.tickServer(server);
             // 市民日程模拟每秒 tick（人口对账补生成/回收 + 日程通勤 + 就餐实扣，M6.5）
             pioneer.colony.citizen.CitizenManager.tickServer(server);
+            pioneer.colony.market.MarketSystem.tickServer(server);
+            pioneer.colony.market.TradeCaravanService.tickServer(server);
         }
     }
 
@@ -183,6 +186,8 @@ public final class ColonyManager {
             }
         }
         // 退购地费 50%（免费块不退）→ 存入玩家待发账户（信用点无实体形态，随下次建殖民地发放）
+        pioneer.colony.market.MarketSystem.cancelAllForColony(level.getServer(), colony);
+        pioneer.colony.market.TradeTreatyManager.removeForColony(level.getServer(), colony);
         long refund = 0;
         for (var dimEntry : colony.territoryEntries()) {
             for (var entry : dimEntry.getValue().long2LongEntrySet()) {

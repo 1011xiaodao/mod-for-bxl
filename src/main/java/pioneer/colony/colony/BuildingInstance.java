@@ -1,6 +1,10 @@
 package pioneer.colony.colony;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 
 /**
  * 殖民地建筑实例——纯数据（数据模拟层），实体/方块表现层是它的投影。
@@ -42,6 +46,8 @@ public final class BuildingInstance {
     private double maintenanceAccum = 0.0;
     private double productionAccum = 0.0;
     private double lastFillRate = 1.0;
+    /** 每个烹饪配方独立的小数批次累积器，避免每个经济 tick 丢弃小数产能。 */
+    private final Map<String, Double> cookingAccum = new LinkedHashMap<>();
 
     public BuildingInstance(String definitionId, int tier, long chunk) {
         this.definitionId = definitionId;
@@ -70,6 +76,14 @@ public final class BuildingInstance {
         tag.putDouble("maintenanceAccum", maintenanceAccum);
         tag.putDouble("productionAccum", productionAccum);
         tag.putDouble("lastFillRate", lastFillRate);
+        ListTag cookingList = new ListTag();
+        for (Map.Entry<String, Double> entry : cookingAccum.entrySet()) {
+            CompoundTag value = new CompoundTag();
+            value.putString("recipe", entry.getKey());
+            value.putDouble("accum", entry.getValue());
+            cookingList.add(value);
+        }
+        tag.put("cookingAccum", cookingList);
         return tag;
     }
 
@@ -97,6 +111,14 @@ public final class BuildingInstance {
         b.maintenanceAccum = tag.getDouble("maintenanceAccum");
         b.productionAccum = tag.getDouble("productionAccum");
         b.lastFillRate = tag.contains("lastFillRate") ? tag.getDouble("lastFillRate") : 1.0;
+        ListTag cookingList = tag.getList("cookingAccum", Tag.TAG_COMPOUND);
+        for (int i = 0; i < cookingList.size(); i++) {
+            CompoundTag value = cookingList.getCompound(i);
+            double accum = value.getDouble("accum");
+            if (Double.isFinite(accum) && accum >= 0.0 && accum < 1.0) {
+                b.cookingAccum.put(value.getString("recipe"), accum);
+            }
+        }
         return b;
     }
 
@@ -225,6 +247,14 @@ public final class BuildingInstance {
 
     public double getLastFillRate() {
         return lastFillRate;
+    }
+
+    public double cookingAccum(String recipeId) {
+        return cookingAccum.getOrDefault(recipeId, 0.0);
+    }
+
+    public void setCookingAccum(String recipeId, double value) {
+        cookingAccum.put(recipeId, Double.isFinite(value) ? Math.max(0.0, Math.min(0.999999999, value)) : 0.0);
     }
 
     public void setLastFillRate(double lastFillRate) {

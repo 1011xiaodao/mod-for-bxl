@@ -24,6 +24,8 @@ public final class GameEvents {
         event.addListener(new pioneer.colony.research.StubResearchSystem.DefLoader());
         // 市场价目表（威胁值物资估值 + M6.7 市场共用）
         event.addListener(new pioneer.colony.market.MarketPrices());
+        // 食堂烹饪配方：数据包可追加/覆盖，/reload 后生效。
+        event.addListener(new pioneer.colony.economy.CookingRecipes());
         // 袭击波次配置（5 档）
         event.addListener(new pioneer.colony.raid.RaidConfigs());
     }
@@ -48,6 +50,7 @@ public final class GameEvents {
     @SubscribeEvent
     public static void onServerStopped(net.neoforged.neoforge.event.server.ServerStoppedEvent event) {
         pioneer.colony.citizen.CitizenManager.onServerStopped();
+        pioneer.colony.market.TradeCaravanService.onServerStopped();
     }
 
     @SubscribeEvent

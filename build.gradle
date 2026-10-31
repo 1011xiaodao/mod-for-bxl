@@ -90,8 +90,17 @@ tasks.register('nativeBridgeSmokeTest', JavaExec) {
     onlyIf { rustCargoFile != null }
 }
 
+tasks.register('colonyAccessSmokeTest', JavaExec) {
+    group = 'verification'
+    description = '验证总督、访客、可信与陌生玩家的权限矩阵。'
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath + sourceSets.main.compileClasspath
+    mainClass = 'pioneer.colony.colony.ColonyAccessSmokeTest'
+}
+
 tasks.named('check') {
     dependsOn tasks.named('nativeBridgeSmokeTest')
+    dependsOn tasks.named('colonyAccessSmokeTest')
 }
 
 neoForge {

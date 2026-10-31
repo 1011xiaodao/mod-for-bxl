@@ -28,5 +28,6 @@ public final class PioneerColony {
 
         // Rust 使用 Java 25 稳定版 FFM API 桥接；原生库缺失时自动使用 Java 回退公式。
         pioneer.colony.nativebridge.RustBridge.initialize(LOGGER);
+        pioneer.colony.api.ColonyApiRegistry.register(new pioneer.colony.api.ColonyApiImpl());
     }
 }

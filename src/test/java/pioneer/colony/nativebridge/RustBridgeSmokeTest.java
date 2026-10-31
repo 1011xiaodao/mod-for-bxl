@@ -1,5 +1,8 @@
 package pioneer.colony.nativebridge;
 
+import com.google.gson.JsonParser;
+import pioneer.colony.economy.CookingRecipe;
+import pioneer.colony.gauge.GaugeState;
 /**
  * 构建期 FFM 集成冒烟测试，由 Gradle 的 nativeBridgeSmokeTest 任务调用。
  * 不依赖测试框架，保证原生库实际加载、ABI 校验及返回值都能工作。
@@ -58,7 +61,29 @@ public final class RustBridgeSmokeTest {
         requireClose("幸福度非法输入保护",
                 RustBridge.calculateHappinessOrFallback(Double.NaN, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0), 0.0);
 
-        System.out.println("Rust FFM 桥接冒烟测试通过：ABI、结构化 JSON、错误回退、经济/市场适配和字符串释放均正常。");
+        GaugeState gauge = new GaugeState();
+        gauge.setContribution("test:compute_hub", 50.0, 5.0, 0.0);
+        requireClose("Gauge 外部余热贡献满足率", gauge.settle(100.0, 10.0, 12.0, 5), 1.0);
+        requireClose("Gauge 合并容量", gauge.capacity(), 150.0);
+        requireClose("Gauge 合并产能", gauge.productionPerMinute(), 15.0);
+        requireClose("Gauge 结算余量", gauge.stored(), 15.0);
+        GaugeState shortageGauge = new GaugeState();
+        requireClose("Gauge 短缺满足率", shortageGauge.settle(0.0, 0.0, 2.0, 5), 0.0);
+        GaugeState longPeriodGauge = new GaugeState();
+        requireClose("Gauge 长周期持续产出满足率", longPeriodGauge.settle(100.0, 10.0, 2.0, 60), 1.0);
+        requireClose("Gauge 容量只限制结算余量", longPeriodGauge.stored(), 100.0);
+
+        CookingRecipe bread = CookingRecipe.parse("pioneer_colony:bread", JsonParser.parseString(
+                "{\"input\":[{\"item\":\"minecraft:wheat\",\"count\":3}],"
+                        + "\"output\":{\"item\":\"minecraft:bread\",\"count\":1},"
+                        + "\"batches_per_minute_per_worker\":0.5}").getAsJsonObject());
+        requireClose("烹饪配方速率", bread.batchesPerMinutePerWorker(), 0.5);
+        if (bread.inputs().size() != 1 || bread.inputs().get(0).count() != 3
+                || !"minecraft:bread".equals(bread.outputItem())) {
+            throw new IllegalStateException("烹饪配方解析错误：" + bread);
+        }
+
+        System.out.println("Rust FFM 与经济系统冒烟测试通过：ABI、JSON、错误回退、Gauge 与烹饪配方解析均正常。");
     }
 
     private static void requireClose(String name, double actual, double expected) {

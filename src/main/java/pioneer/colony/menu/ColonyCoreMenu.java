@@ -40,6 +40,8 @@ public class ColonyCoreMenu extends AbstractContainerMenu {
     public static final int BTN_PAGE_TERRITORY = 11;
     public static final int BTN_PAGE_CITY = 12;
     public static final int BTN_PAGE_RESEARCH = 13;
+    public static final int BTN_PAGE_MARKET = 14;
+    public static final int BTN_PAGE_TREATY = 15;
     public static final int BTN_RESEARCH_BASE = 2000;
     public static final int BTN_CONFIRM_ABANDON = 50;
     public static final int BTN_DISSOLVE = 60;
@@ -72,6 +74,8 @@ public class ColonyCoreMenu extends AbstractContainerMenu {
     public static final int SLOT_RAID_COUNTDOWN = 20;
     public static final int SLOT_HQ_HEALTH = 21;
     public static final int SLOT_CAN_REPAIR = 22;
+    public static final int SLOT_IS_TRADE_STATION = 24;
+    public static final int SLOT_IS_OWNER = 25;
     public static final int SLOT_MAP_BASE = 30; // + offset 0..120
     public static final int SLOT_COUNT = SLOT_MAP_BASE + MAP_SIZE * MAP_SIZE;
 
@@ -112,6 +116,7 @@ public class ColonyCoreMenu extends AbstractContainerMenu {
     // 服务端交互状态
     private final ServerPlayer playerHolder = null;
     private int sinceListSent = 0;
+    private int sinceMarketSent = 0;
     private boolean listDirty = false;
     private int selectedOffset = -1;
     private long dismantleArmWall = 0;
@@ -165,6 +170,20 @@ public class ColonyCoreMenu extends AbstractContainerMenu {
         return data[SLOT_IS_HQ] == 1;
     }
 
+    public boolean isTradeStation() {
+        return data[SLOT_IS_TRADE_STATION] == 1;
+    }
+
+    /** 服务端市场操作的二次校验：必须仍在本人当前打开的有效贸易站市场页。 */
+    public boolean canPlayerUseMarket(ServerPlayer candidate) {
+        return candidate != null && candidate == player && stillValid(candidate)
+                && colony != null && building != null
+                && data[SLOT_PAGE] == 4 && isTradeStation()
+                && "trade_station".equals(building.definitionId())
+                && building.status() == BuildingInstance.Status.ACTIVE
+                && colony.canUseTradeStation(candidate.getUUID());
+    }
+
     public int page() {
         return data[SLOT_PAGE];
     }
@@ -202,6 +221,11 @@ public class ColonyCoreMenu extends AbstractContainerMenu {
         setSlot(SLOT_CONFIRMED, (dissolveArmed || now - dismantleArmWall < 30_000) ? 1 : 0);
         setSlot(SLOT_IS_HQ, "hq".equals(building.definitionId()) ? 1 : 0);
         setSlot(SLOT_IS_WAREHOUSE, "warehouse".equals(building.definitionId()) ? 1 : 0);
+        setSlot(SLOT_IS_TRADE_STATION, "trade_station".equals(building.definitionId())
+                && building.status() == BuildingInstance.Status.ACTIVE ? 1 : 0);
+        setSlot(SLOT_IS_OWNER, colony.isOwner(player.getUUID()) ? 1 : 0);
+        setSlot(SLOT_RESEARCH_AVAILABLE, "hq".equals(building.definitionId())
+                && pioneer.colony.research.ResearchIntegration.bridge() != null ? 1 : 0);
         setSlot(SLOT_THREAT, (int) Math.min(Integer.MAX_VALUE, colony.getThreatValue()));
         setSlot(SLOT_RAID_COUNTDOWN, raidCountdownSeconds(server, colony));
         setSlot(SLOT_HQ_HEALTH, (int) (colony.getHqHealth() / Config.HQ_MAX_HEALTH.get() * 100));
@@ -214,9 +238,11 @@ public class ColonyCoreMenu extends AbstractContainerMenu {
         }
         if (data[SLOT_PAGE] == 3) {
             sinceListSent++;
-            if (sinceListSent > 20 || listDirty) {
-                sendResearchList();
-            }
+            if (sinceListSent > 20 || listDirty) sendResearchList();
+        }
+        if (data[SLOT_PAGE] == 4 && isTradeStation()) {
+            sinceMarketSent++;
+            if (sinceMarketSent > 20) sendMarketInfo();
         }
     }
 
@@ -253,6 +279,27 @@ public class ColonyCoreMenu extends AbstractContainerMenu {
         ColonyResearchPayload payload = new ColonyResearchPayload(payloadEntries, slotsUsed, slotsMax,
                 speedPercent, pioneer.colony.config.Config.RESEARCH_ORG_FEE.get());
         sp.connection.send(payload);
+    }
+
+    /** 贸易站市场快照（动态文本通过 payload 同步，避免 data slots 字符串截断）。 */
+    private void sendMarketInfo() {
+        sinceMarketSent = 0;
+        if (!(player instanceof ServerPlayer sp) || colony == null || building == null
+                || !"trade_station".equals(building.definitionId())) return;
+        List<pioneer.colony.network.ColonyMarketPayload.PriceEntry> prices =
+                pioneer.colony.market.MarketPrices.listedItems().stream().sorted().limit(8)
+                        .map(item -> new pioneer.colony.network.ColonyMarketPayload.PriceEntry(
+                                item, pioneer.colony.market.MarketSystem.currentPrice(server, item),
+                                pioneer.colony.market.MarketPrices.minPrice(item),
+                                pioneer.colony.market.MarketPrices.maxPrice(item)))
+                        .toList();
+        List<pioneer.colony.network.ColonyMarketPayload.OrderEntry> orders =
+                pioneer.colony.market.MarketSystem.ordersForColony(server, colony).stream().limit(8)
+                        .map(order -> new pioneer.colony.network.ColonyMarketPayload.OrderEntry(
+                                order.id(), order.side() == pioneer.colony.market.MarketSavedData.Side.BUY ? "买入" : "卖出",
+                                order.item(), order.remainingQuantity(), order.limitPrice(), order.expiresAt()))
+                        .toList();
+        sp.connection.send(new pioneer.colony.network.ColonyMarketPayload(prices, orders));
     }
 
     private void refreshMapStates() {
@@ -309,6 +356,27 @@ public class ColonyCoreMenu extends AbstractContainerMenu {
             return false;
         }
         long now = System.currentTimeMillis();
+        boolean owner = colony.isOwner(sp.getUUID());
+        boolean trusted = colony.isTrusted(sp.getUUID());
+        boolean visitor = colony.canUseTradeStation(sp.getUUID()) && !trusted;
+
+        // 访客只能切入贸易站市场页；不能通过伪造容器按钮调用建筑/领地管理操作。
+        if (visitor && !(isTradeStation() && id == BTN_PAGE_MARKET)) {
+            feedback(sp, "访客仅可使用贸易站，不能管理殖民地建筑或领地。");
+            return true;
+        }
+        // 可信成员可收取建筑产出，但购地、建造管理、仓库整体转移、研究和解散始终仅限总督。
+        if (!owner && (id == BTN_UPGRADE || id == BTN_DISMANTLE || id == BTN_REPAIR
+                || id == BTN_DEPOSIT_ALL || id == BTN_WITHDRAW_ALL
+                || (id >= BTN_MAP_BASE && id < BTN_MAP_BASE + MAP_SIZE * MAP_SIZE)
+                || id == BTN_CONFIRM_ABANDON || id == BTN_DISSOLVE
+                || (id >= BTN_RESEARCH_BASE && id < BTN_RESEARCH_BASE + 8))) {
+            feedback(sp, "该操作仅限殖民地总督。");
+            return true;
+        }
+        if (!trusted && !visitor && !owner) {
+            return false;
+        }
         if (id == BTN_WITHDRAW) {
             long moved = ConstructionService.withdrawOutput(level, colony, building, sp);
             feedback(sp, moved < 0 ? "该建筑无产出物可收取。"
@@ -351,6 +419,41 @@ public class ColonyCoreMenu extends AbstractContainerMenu {
         if (id >= BTN_PAGE_OVERVIEW && id <= BTN_PAGE_CITY) {
             setSlot(SLOT_PAGE, id - BTN_PAGE_OVERVIEW);
             refreshServerState();
+            return true;
+        }
+        if (id == BTN_PAGE_RESEARCH && isHq() && data[SLOT_RESEARCH_AVAILABLE] == 1) {
+            setSlot(SLOT_PAGE, 3);
+            refreshServerState();
+            sendResearchList();
+            return true;
+        }
+        if (id == BTN_PAGE_MARKET && isTradeStation()) {
+            setSlot(SLOT_PAGE, 4);
+            refreshServerState();
+            sendMarketInfo();
+            return true;
+        }
+        if (id == BTN_PAGE_TREATY && isHq() && owner) {
+            setSlot(SLOT_PAGE, 5);
+            refreshServerState();
+            return true;
+        }
+        if (id >= BTN_RESEARCH_BASE && id < BTN_RESEARCH_BASE + 8 && isHq()) {
+            var bridge = pioneer.colony.research.ResearchIntegration.bridge();
+            if (bridge == null) {
+                feedback(sp, "当前研究系统不可用。");
+                return true;
+            }
+            var entries = bridge.visibleResearches(server, sp.getUUID());
+            int index = id - BTN_RESEARCH_BASE;
+            if (index >= entries.size()
+                    || entries.get(index).state() != pioneer.colony.research.ResearchInfo.State.AVAILABLE) {
+                feedback(sp, "该研究当前不可发起，请刷新研究列表后重试。");
+                return true;
+            }
+            var result = pioneer.colony.research.ResearchService.startOrganized(
+                    server, sp, colony, entries.get(index).id());
+            feedback(sp, result.message());
             return true;
         }
         if (id >= BTN_MAP_BASE && id < BTN_MAP_BASE + MAP_SIZE * MAP_SIZE) {
@@ -426,7 +529,28 @@ public class ColonyCoreMenu extends AbstractContainerMenu {
     }
 
     @Override
-    public boolean stillValid(Player player) {
-        return true;
+    public boolean stillValid(Player candidate) {
+        // 客户端菜单没有接收服务端 BlockPos，保持显示；服务端是权限与距离的权威。
+        if (candidate.level().isClientSide) {
+            return true;
+        }
+        if (!(candidate instanceof ServerPlayer sp) || pos == null
+                || !(sp.level() instanceof ServerLevel level) || colony == null || building == null) {
+            return false;
+        }
+        double dx = sp.getX() - (pos.getX() + 0.5);
+        double dy = sp.getY() - (pos.getY() + 0.5);
+        double dz = sp.getZ() - (pos.getZ() + 0.5);
+        if (dx * dx + dy * dy + dz * dz > 64.0) {
+            return false;
+        }
+        if (!(level.getBlockEntity(pos) instanceof pioneer.colony.blockentity.ColonyCoreBlockEntity core)) {
+            return false;
+        }
+        Colony liveColony = core.resolveColony(level.getServer());
+        if (liveColony == null || !liveColony.uuid().equals(colony.uuid())) {
+            return false;
+        }
+        return core.resolveBuilding(liveColony) == building && core.canPlayerOpen(sp);
     }
 }

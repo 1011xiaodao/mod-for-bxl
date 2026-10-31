@@ -89,6 +89,10 @@ public final class MarketPrices extends SimpleJsonResourceReloadListener {
         return prices.containsKey(item);
     }
 
+    public static java.util.Set<String> listedItems() {
+        return java.util.Set.copyOf(prices.keySet());
+    }
+
     public static int size() {
         return prices.size();
     }

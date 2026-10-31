@@ -75,13 +75,26 @@ public class ColonyCoreBlockEntity extends BlockEntity implements MenuProvider {
         return footprintD;
     }
 
-    /** 开 GUI 权限（总督本人或可信）——由核心方块右键调用（服务端）。 */
+    /**
+     * 开 GUI 权限：总督/可信可打开建筑 GUI；访客仅可打开已启用的贸易站。
+     * 最终权限在服务端判定，不能依赖客户端隐藏按钮。
+     */
     public boolean canPlayerOpen(Player player) {
         if (!(level instanceof ServerLevel serverLevel)) {
             return false;
         }
         Colony colony = resolveColony(serverLevel.getServer());
-        return colony != null && colony.canOpenGui(player.getUUID());
+        if (colony == null) {
+            return false;
+        }
+        if (colony.canOpenGui(player.getUUID())) {
+            return true;
+        }
+        if (!"trade_station".equals(definitionId) || !colony.canUseTradeStation(player.getUUID())) {
+            return false;
+        }
+        BuildingInstance building = resolveBuilding(colony);
+        return building != null && building.status() == BuildingInstance.Status.ACTIVE;
     }
 
     public Colony resolveColony(MinecraftServer server) {

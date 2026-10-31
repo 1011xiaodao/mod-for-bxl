@@ -25,6 +25,13 @@ public final class Config {
     public static final ModConfigSpec.DoubleValue HAPPINESS_HEATING_WEIGHT;
     public static final ModConfigSpec.DoubleValue HAPPINESS_FOOD_WEIGHT;
     public static final ModConfigSpec.DoubleValue HAPPINESS_HOUSING_WEIGHT;
+    public static final ModConfigSpec.DoubleValue HEAT_PRODUCTION_PER_BOILER_TIER_PER_MINUTE;
+    public static final ModConfigSpec.DoubleValue HEAT_DEMAND_PER_RESIDENT_SLOT_PER_MINUTE;
+    public static final ModConfigSpec.DoubleValue HEAT_CAPACITY_PER_BOILER_TIER;
+    public static final ModConfigSpec.ConfigValue<String> HEAT_FUEL_ITEM_ID;
+    public static final ModConfigSpec.DoubleValue HEAT_FUEL_PER_BOILER_TIER_PER_HOUR;
+    public static final ModConfigSpec.ConfigValue<List<? extends String>> HEATING_DEMAND_CURVE;
+    public static final ModConfigSpec.ConfigValue<List<? extends String>> FARM_SEASON_OUTPUT_CURVE;
 
     public static final ModConfigSpec.IntValue TERRITORY_MAX_CHUNKS;
     public static final ModConfigSpec.IntValue CHUNK_PRICE_BASE;
@@ -76,6 +83,18 @@ public final class Config {
     public static final ModConfigSpec.IntValue STUCK_TELEPORT_SECONDS;
     public static final ModConfigSpec.BooleanValue LOG_CITIZEN_EVENTS;
 
+    public static final ModConfigSpec.IntValue MARKET_MATCH_INTERVAL_SECONDS;
+    public static final ModConfigSpec.IntValue MARKET_PRICE_UPDATE_SECONDS;
+    public static final ModConfigSpec.IntValue MARKET_MAX_ORDERS;
+    public static final ModConfigSpec.LongValue MARKET_MAX_ORDER_QUANTITY;
+    public static final ModConfigSpec.LongValue MARKET_DAILY_VOLUME_LIMIT;
+    public static final ModConfigSpec.DoubleValue MARKET_FEE_PER_GAME_DAY;
+    public static final ModConfigSpec.IntValue MARKET_MAX_MATCHES_PER_TICK;
+    public static final ModConfigSpec.IntValue TREATY_INVITE_DAYS;
+    public static final ModConfigSpec.IntValue TREATY_TERMINATION_NOTICE_DAYS;
+    public static final ModConfigSpec.IntValue TREATY_MAX_PER_COLONY;
+    public static final ModConfigSpec.DoubleValue TRADE_ROUTE_PRODUCTION_BONUS_PER_TREATY;
+
     public static final ModConfigSpec.BooleanValue DEBUG_LOG_ECONOMY_TICK;
 
     static {
@@ -115,6 +134,30 @@ public final class Config {
                 .defineInRange("foodWeight", 25.0, 0.0, 100.0);
         HAPPINESS_HOUSING_WEIGHT = b.comment("住房人均水平权重")
                 .defineInRange("housingWeight", 15.0, 0.0, 100.0);
+        HEAT_PRODUCTION_PER_BOILER_TIER_PER_MINUTE = b.comment("每级锅炉房每分钟热能产量（HU）")
+                .defineInRange("heatProductionPerBoilerTierPerMinute", 12.0, 0.0, 100000.0);
+        HEAT_DEMAND_PER_RESIDENT_SLOT_PER_MINUTE = b.comment("每个住宅床位在最冷季节每分钟热能需求（HU）")
+                .defineInRange("heatDemandPerResidentSlotPerMinute", 0.5, 0.0, 10000.0);
+        HEAT_CAPACITY_PER_BOILER_TIER = b.comment("每级锅炉房提供的热能存储容量（HU）")
+                .defineInRange("heatCapacityPerBoilerTier", 1200.0, 0.0, 100000000.0);
+        HEAT_FUEL_ITEM_ID = b.comment("锅炉燃料物品 ID")
+                .define("heatFuelItemId", "minecraft:coal");
+        HEAT_FUEL_PER_BOILER_TIER_PER_HOUR = b.comment("每级锅炉房每游戏小时消耗的燃料物品数，支持小数累计")
+                .defineInRange("heatFuelPerBoilerTierPerHour", 1.0, 0.0, 100000.0);
+        HEATING_DEMAND_CURVE = b.comment("Serene Seasons 12 子季节供暖需求曲线，格式 key=value；无四季模组时供暖项保持中性")
+                .defineList("heatingDemandCurve", List.of(
+                        "early_spring=0.35", "mid_spring=0.25", "late_spring=0.15",
+                        "early_summer=0.05", "mid_summer=0.05", "late_summer=0.05",
+                        "early_autumn=0.20", "mid_autumn=0.35", "late_autumn=0.50",
+                        "early_winter=0.65", "mid_winter=0.85", "late_winter=1.0"),
+                        o -> o instanceof String s && s.contains("="));
+        FARM_SEASON_OUTPUT_CURVE = b.comment("Serene Seasons 12 子季节农场产出倍率，格式 key=value")
+                .defineList("farmSeasonOutputCurve", List.of(
+                        "early_spring=0.75", "mid_spring=0.85", "late_spring=0.95",
+                        "early_summer=1.0", "mid_summer=1.0", "late_summer=1.0",
+                        "early_autumn=0.95", "mid_autumn=0.90", "late_autumn=0.80",
+                        "early_winter=0.55", "mid_winter=0.55", "late_winter=0.55"),
+                        o -> o instanceof String s && s.contains("="));
         b.pop();
 
         b.push("territory");
@@ -223,6 +266,34 @@ public final class Config {
                 .defineInRange("stuckTeleportSeconds", 30, 0, 3600);
         LOG_CITIZEN_EVENTS = b.comment("市民事件（出生/身亡/就餐）写日志（RCON 冒烟验收证据）")
                 .define("logCitizenEvents", true);
+        b.pop();
+
+        b.push("market");
+        MARKET_MATCH_INTERVAL_SECONDS = b.comment("星联市场订单撮合间隔（秒）；只处理纯数据，不生成实体")
+                .defineInRange("matchIntervalSeconds", 60, 10, 600);
+        MARKET_PRICE_UPDATE_SECONDS = b.comment("全服行情动态价格更新周期（秒）")
+                .defineInRange("priceUpdateSeconds", 300, 30, 3600);
+        MARKET_MAX_ORDERS = b.comment("每殖民地同时挂单上限")
+                .defineInRange("maxOrdersPerColony", 20, 1, 1000);
+        MARKET_MAX_ORDER_QUANTITY = b.comment("单笔订单最大物品数量")
+                .defineInRange("maxOrderQuantity", 100000L, 1L, 1000000000L);
+        MARKET_DAILY_VOLUME_LIMIT = b.comment("每殖民地每日成交额上限（信用点；0 表示不限制）")
+                .defineInRange("dailyVolumeLimit", 1000000L, 0L, Long.MAX_VALUE);
+        MARKET_FEE_PER_GAME_DAY = b.comment("挂单手续费率：每个游戏日按挂单名义金额的比例计费，0.005 = 0.5%")
+                .defineInRange("feePerGameDay", 0.005, 0.0, 1.0);
+        MARKET_MAX_MATCHES_PER_TICK = b.comment("每次市场撮合最多完成的成交笔数，限制主线程预算")
+                .defineInRange("maxMatchesPerTick", 128, 1, 10000);
+        b.pop();
+
+        b.push("tradeTreaties");
+        TREATY_INVITE_DAYS = b.comment("城市间贸易协定邀约有效期（游戏日），目标总督可稍后上线确认")
+                .defineInRange("inviteDays", 7, 1, 30);
+        TREATY_TERMINATION_NOTICE_DAYS = b.comment("协定解约通知期（游戏日）")
+                .defineInRange("terminationNoticeDays", 3, 1, 30);
+        TREATY_MAX_PER_COLONY = b.comment("每殖民地活跃/待确认协定上限")
+                .defineInRange("maxTreatiesPerColony", 3, 1, 100);
+        TRADE_ROUTE_PRODUCTION_BONUS_PER_TREATY = b.comment("每条活跃贸易路线对路线商品产量的加成（0.05 = +5%）")
+                .defineInRange("routeProductionBonusPerTreaty", 0.05, 0.0, 1.0);
         b.pop();
 
         b.push("debug");

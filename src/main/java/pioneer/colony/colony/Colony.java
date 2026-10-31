@@ -14,6 +14,7 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.world.level.ChunkPos;
 import pioneer.colony.config.Config;
 import pioneer.colony.economy.OfflineSummary;
+import pioneer.colony.gauge.GaugeState;
 
 /**
  * 殖民地数据模型（06 §3.1/§4）。每玩家 1 个（可配），全部为存档数据（SavedData 持久化），
@@ -63,6 +64,9 @@ public final class Colony {
     private double hqHealth = 200.0;
     /** M6.5 日程就餐已实扣的食物点（经济 tick 从人口需求中抵扣，防双重记账；残留滚存下期）。 */
     private double fedPointsCarry = 0.0;
+    private double heatFuelCarry = 0.0;
+    /** 通用扩展资源 Gauge 持久状态（热能是首个内置用例）。 */
+    private final Map<String, GaugeState> gauges = new LinkedHashMap<>();
 
     public Colony(UUID uuid, UUID owner, String name, String dimension, int blockX, int blockZ) {
         this.uuid = uuid;
@@ -148,9 +152,19 @@ public final class Colony {
         return trust;
     }
 
-    /** 是否可开建筑 GUI（总督本人或可信）。 */
+    /** 是否可开建筑 GUI（总督本人或可信）；访客只能进入贸易站。 */
     public boolean canOpenGui(UUID player) {
-        return owner.equals(player) || trust.get(player) == Trust.TRUSTED;
+        return isOwner(player) || trust.get(player) == Trust.TRUSTED;
+    }
+
+    /** 是否可在贸易站交互（总督、可信、访客）。 */
+    public boolean canUseTradeStation(UUID player) {
+        return isOwner(player) || trust.containsKey(player);
+    }
+
+    /** 是否为可信成员（不包含访客）。 */
+    public boolean isTrusted(UUID player) {
+        return isOwner(player) || trust.get(player) == Trust.TRUSTED;
     }
 
     public boolean isOwner(UUID player) {
@@ -279,6 +293,15 @@ public final class Colony {
         return accepted;
     }
 
+    /** 指定物品在当前缓冲中还可接收的数量；用于市场买入前检查，避免交易后丢货。 */
+    public long remainingCapacityFor(String item) {
+        boolean isNew = !buffer.containsKey(item);
+        if (isNew && buffer.size() >= bufferTypeCapacity()) {
+            return 0L;
+        }
+        return Math.max(0L, bufferPerTypeCapacity() - buffer.getOrDefault(item, 0L));
+    }
+
     /** 从缓冲取物，返回实际取出量。 */
     public long takeItems(String item, long count) {
         if (count <= 0 || !buffer.containsKey(item)) {
@@ -356,6 +379,14 @@ public final class Colony {
         tag.putInt("researchCitizenCapBonus", researchCitizenCapBonus);
         tag.putDouble("hqHealth", hqHealth);
         tag.putDouble("fedPointsCarry", fedPointsCarry);
+        tag.putDouble("heatFuelCarry", heatFuelCarry);
+        ListTag gaugeList = new ListTag();
+        for (Map.Entry<String, GaugeState> entry : gauges.entrySet()) {
+            CompoundTag gaugeTag = entry.getValue().save();
+            gaugeTag.putString("id", entry.getKey());
+            gaugeList.add(gaugeTag);
+        }
+        tag.put("gauges", gaugeList);
         tag.putLong("lastPurchaseWallTime", lastPurchaseWallTime);
 
         ListTag territoryList = new ListTag();
@@ -422,6 +453,14 @@ public final class Colony {
         colony.researchCitizenCapBonus = tag.getInt("researchCitizenCapBonus");
         colony.hqHealth = tag.contains("hqHealth") ? tag.getDouble("hqHealth") : 200.0;
         colony.fedPointsCarry = tag.contains("fedPointsCarry") ? tag.getDouble("fedPointsCarry") : 0.0;
+        colony.heatFuelCarry = tag.contains("heatFuelCarry") && Double.isFinite(tag.getDouble("heatFuelCarry"))
+                ? Math.max(0.0, Math.min(0.999999999, tag.getDouble("heatFuelCarry"))) : 0.0;
+        ListTag gaugeList = tag.getList("gauges", Tag.TAG_COMPOUND);
+        for (int i = 0; i < gaugeList.size(); i++) {
+            CompoundTag gaugeTag = gaugeList.getCompound(i);
+            String id = gaugeTag.getString("id");
+            if (!id.isBlank()) colony.gauges.put(id, GaugeState.load(gaugeTag));
+        }
         colony.lastPurchaseWallTime = tag.getLong("lastPurchaseWallTime");
 
         ListTag territoryList = tag.getList("territory", Tag.TAG_COMPOUND);
@@ -524,7 +563,13 @@ public final class Colony {
 
     /** 加/扣信用点（余额不为负），返回调整后余额。 */
     public long adjustCredits(long delta) {
-        credits = Math.max(0, credits + delta);
+        long adjusted;
+        try {
+            adjusted = Math.addExact(credits, delta);
+        } catch (ArithmeticException overflow) {
+            adjusted = delta >= 0 ? Long.MAX_VALUE : 0L;
+        }
+        credits = Math.max(0L, adjusted);
         return credits;
     }
 
@@ -537,7 +582,7 @@ public final class Colony {
     }
 
     public void setThreatValue(double threatValue) {
-        this.threatValue = Math.max(0, threatValue);
+        this.threatValue = Double.isFinite(threatValue) ? Math.max(0.0, threatValue) : 0.0;
     }
 
     public double getHappiness() {
@@ -638,5 +683,23 @@ public final class Colony {
     /** 市民就餐实扣食物点入账（经济 tick 抵扣用）。 */
     public void addFedPoints(double points) {
         fedPointsCarry += Math.max(0, points);
+    }
+
+    public double getHeatFuelCarry() {
+        return heatFuelCarry;
+    }
+
+    public void setHeatFuelCarry(double value) {
+        heatFuelCarry = Double.isFinite(value) ? Math.max(0.0, Math.min(0.999999999, value)) : 0.0;
+    }
+
+    // —— 通用 Gauge 资源框架（M6.9，热能首个用例）——
+
+    public GaugeState gauge(String id) {
+        return gauges.computeIfAbsent(id, ignored -> new GaugeState());
+    }
+
+    public Map<String, GaugeState> gaugeSnapshot() {
+        return Map.copyOf(gauges);
     }
 }

@@ -2,10 +2,12 @@ package pioneer.colony.client;
 
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
+import net.neoforged.neoforge.network.PacketDistributor;
 import pioneer.colony.colony.BuildingInstance;
 import pioneer.colony.menu.ColonyCoreMenu;
 
@@ -18,11 +20,24 @@ public class ColonyCoreScreen extends AbstractContainerScreen<ColonyCoreMenu> {
     private static final int MAP_SIZE = ColonyCoreMenu.MAP_SIZE;
 
     private int lastPage = -1;
+    private int lastWidgetFlags = -1;
+    private EditBox marketItemInput;
+    private EditBox marketCountInput;
+    private EditBox marketPriceInput;
+    private EditBox marketDaysInput;
+    private EditBox marketOrderIdInput;
+    private EditBox trustPlayerInput;
+    private EditBox treatyTargetInput;
+    private EditBox treatyExportItemInput;
+    private EditBox treatyExportRateInput;
+    private EditBox treatyReturnItemInput;
+    private EditBox treatyReturnRateInput;
+    private EditBox treatyIdInput;
 
     public ColonyCoreScreen(ColonyCoreMenu menu, Inventory inv, Component title) {
         super(menu, inv, title);
         this.imageWidth = 196;
-        this.imageHeight = 166;
+        this.imageHeight = 220;
     }
 
     @Override
@@ -38,15 +53,23 @@ public class ColonyCoreScreen extends AbstractContainerScreen<ColonyCoreMenu> {
         int y = topPos + 4;
         if (menu.isHq()) {
             addRenderableWidget(Button.builder(Component.literal("概览"),
-                    b -> sendButton(ColonyCoreMenu.BTN_PAGE_OVERVIEW)).bounds(x, y, 40, 16).build());
+                    b -> sendButton(ColonyCoreMenu.BTN_PAGE_OVERVIEW)).bounds(x, y, 34, 16).build());
             addRenderableWidget(Button.builder(Component.literal("领地"),
-                    b -> sendButton(ColonyCoreMenu.BTN_PAGE_TERRITORY)).bounds(x + 44, y, 40, 16).build());
+                    b -> sendButton(ColonyCoreMenu.BTN_PAGE_TERRITORY)).bounds(x + 36, y, 34, 16).build());
             addRenderableWidget(Button.builder(Component.literal("管理"),
-                    b -> sendButton(ColonyCoreMenu.BTN_PAGE_CITY)).bounds(x + 88, y, 40, 16).build());
+                    b -> sendButton(ColonyCoreMenu.BTN_PAGE_CITY)).bounds(x + 72, y, 34, 16).build());
             if (menu.data(ColonyCoreMenu.SLOT_RESEARCH_AVAILABLE) == 1) {
                 addRenderableWidget(Button.builder(Component.literal("研究"),
-                        b -> sendButton(ColonyCoreMenu.BTN_PAGE_RESEARCH)).bounds(x + 132, y, 40, 16).build());
+                        b -> sendButton(ColonyCoreMenu.BTN_PAGE_RESEARCH)).bounds(x + 108, y, 34, 16).build());
             }
+            if (menu.data(ColonyCoreMenu.SLOT_IS_OWNER) == 1) {
+                addRenderableWidget(Button.builder(Component.literal("协定"),
+                        b -> sendButton(ColonyCoreMenu.BTN_PAGE_TREATY)).bounds(x + 144, y, 34, 16).build());
+            }
+            y += 20;
+        } else if (menu.isTradeStation()) {
+            addRenderableWidget(Button.builder(Component.literal("星联市场"),
+                    b -> sendButton(ColonyCoreMenu.BTN_PAGE_MARKET)).bounds(x, y, 72, 16).build());
             y += 20;
         }
 
@@ -65,6 +88,74 @@ public class ColonyCoreScreen extends AbstractContainerScreen<ColonyCoreMenu> {
                     ey += 16;
                 }
             }
+        } else if (page == 2 && menu.isHq() && menu.data(ColonyCoreMenu.SLOT_IS_OWNER) == 1) {
+            trustPlayerInput = new EditBox(font, leftPos + 8, topPos + 94, 180, 14, Component.literal("玩家名"));
+            trustPlayerInput.setMaxLength(16);
+            addRenderableWidget(trustPlayerInput);
+            addRenderableWidget(Button.builder(Component.literal("访客"),
+                    b -> submitTrustCommand("add", "visitor")).bounds(leftPos + 8, topPos + 112, 42, 14).build());
+            addRenderableWidget(Button.builder(Component.literal("可信"),
+                    b -> submitTrustCommand("add", "trusted")).bounds(leftPos + 54, topPos + 112, 42, 14).build());
+            addRenderableWidget(Button.builder(Component.literal("移除"),
+                    b -> submitTrustCommand("remove", "")).bounds(leftPos + 100, topPos + 112, 42, 14).build());
+            addRenderableWidget(Button.builder(Component.literal("查看名单"),
+                    b -> submitTrustList()).bounds(leftPos + 146, topPos + 112, 44, 14).build());
+        } else if (page == 5 && menu.isHq() && menu.data(ColonyCoreMenu.SLOT_IS_OWNER) == 1) {
+            treatyTargetInput = new EditBox(font, leftPos + 8, topPos + 58, 72, 14, Component.literal("目标总督"));
+            treatyTargetInput.setMaxLength(16);
+            treatyExportItemInput = new EditBox(font, leftPos + 84, topPos + 58, 104, 14, Component.literal("出口物品 ID"));
+            treatyExportItemInput.setMaxLength(128);
+            treatyExportItemInput.setValue("minecraft:wheat");
+            treatyExportRateInput = new EditBox(font, leftPos + 8, topPos + 78, 54, 14, Component.literal("出口/小时"));
+            treatyExportRateInput.setMaxLength(12);
+            treatyExportRateInput.setValue("64");
+            treatyReturnItemInput = new EditBox(font, leftPos + 66, topPos + 78, 88, 14, Component.literal("返还物品 ID"));
+            treatyReturnItemInput.setMaxLength(128);
+            treatyReturnRateInput = new EditBox(font, leftPos + 158, topPos + 78, 30, 14, Component.literal("返还/小时"));
+            treatyReturnRateInput.setMaxLength(12);
+            treatyReturnRateInput.setValue("0");
+            treatyIdInput = new EditBox(font, leftPos + 8, topPos + 140, 64, 14, Component.literal("协定 ID"));
+            treatyIdInput.setMaxLength(18);
+            addRenderableWidget(treatyTargetInput);
+            addRenderableWidget(treatyExportItemInput);
+            addRenderableWidget(treatyExportRateInput);
+            addRenderableWidget(treatyReturnItemInput);
+            addRenderableWidget(treatyReturnRateInput);
+            addRenderableWidget(treatyIdInput);
+            addRenderableWidget(Button.builder(Component.literal("发起邀约"),
+                    b -> submitTreatyProposal()).bounds(leftPos + 8, topPos + 98, 64, 16).build());
+            addRenderableWidget(Button.builder(Component.literal("查看协定"),
+                    b -> sendTreatyCommand("list", "")).bounds(leftPos + 76, topPos + 98, 64, 16).build());
+            addRenderableWidget(Button.builder(Component.literal("确认"),
+                    b -> sendTreatyCommand("accept", treatyIdInput.getValue())).bounds(leftPos + 76, topPos + 140, 48, 14).build());
+            addRenderableWidget(Button.builder(Component.literal("解约"),
+                    b -> sendTreatyCommand("terminate", treatyIdInput.getValue())).bounds(leftPos + 128, topPos + 140, 48, 14).build());
+        } else if (page == 4 && menu.isTradeStation()) {
+            marketItemInput = new EditBox(font, leftPos + 8, topPos + 142, 180, 14, Component.literal("物品 ID"));
+            marketItemInput.setMaxLength(256);
+            marketItemInput.setValue("minecraft:wheat");
+            marketCountInput = new EditBox(font, leftPos + 8, topPos + 160, 46, 14, Component.literal("数量"));
+            marketCountInput.setValue("1");
+            marketCountInput.setMaxLength(12);
+            marketPriceInput = new EditBox(font, leftPos + 58, topPos + 160, 46, 14, Component.literal("价格"));
+            marketPriceInput.setValue("0");
+            marketPriceInput.setMaxLength(12);
+            marketDaysInput = new EditBox(font, leftPos + 108, topPos + 160, 28, 14, Component.literal("天数"));
+            marketDaysInput.setValue("1");
+            marketDaysInput.setMaxLength(2);
+            marketOrderIdInput = new EditBox(font, leftPos + 8, topPos + 181, 62, 14, Component.literal("订单 ID"));
+            marketOrderIdInput.setMaxLength(12);
+            addRenderableWidget(marketItemInput);
+            addRenderableWidget(marketCountInput);
+            addRenderableWidget(marketPriceInput);
+            addRenderableWidget(marketDaysInput);
+            addRenderableWidget(marketOrderIdInput);
+            addRenderableWidget(Button.builder(Component.literal("买"), b -> submitMarketAction(
+                    pioneer.colony.network.MarketActionPayload.Action.BUY)).bounds(leftPos + 140, topPos + 160, 24, 14).build());
+            addRenderableWidget(Button.builder(Component.literal("卖"), b -> submitMarketAction(
+                    pioneer.colony.network.MarketActionPayload.Action.SELL)).bounds(leftPos + 166, topPos + 160, 24, 14).build());
+            addRenderableWidget(Button.builder(Component.literal("撤销订单"), b -> submitMarketAction(
+                    pioneer.colony.network.MarketActionPayload.Action.CANCEL)).bounds(leftPos + 74, topPos + 181, 70, 14).build());
         }
         int status = menu.data(ColonyCoreMenu.SLOT_STATUS);
         if (page == 0) {
@@ -88,6 +179,91 @@ public class ColonyCoreScreen extends AbstractContainerScreen<ColonyCoreMenu> {
                     b -> sendButton(ColonyCoreMenu.BTN_DISSOLVE)).bounds(leftPos + 8, y + 118, 180, 18).build());
         }
         this.lastPage = page;
+        this.lastWidgetFlags = widgetFlags();
+    }
+
+    private int widgetFlags() {
+        return (menu.isHq() ? 1 : 0)
+                | (menu.isTradeStation() ? 1 << 1 : 0)
+                | (menu.data(ColonyCoreMenu.SLOT_RESEARCH_AVAILABLE) == 1 ? 1 << 2 : 0)
+                | (menu.data(ColonyCoreMenu.SLOT_IS_OWNER) == 1 ? 1 << 3 : 0);
+    }
+
+    private void submitTrustCommand(String action, String role) {
+        if (minecraft == null || minecraft.player == null || trustPlayerInput == null) return;
+        String playerName = trustPlayerInput.getValue().trim();
+        if (!playerName.matches("[A-Za-z0-9_]{1,16}")) {
+            minecraft.player.displayClientMessage(Component.literal("请输入有效的 Minecraft 玩家名（1～16 位字母、数字或下划线）。"), true);
+            return;
+        }
+        String command = "colony trust " + action + " " + playerName;
+        if (!role.isBlank()) command += " " + role;
+        minecraft.player.connection.sendCommand(command);
+    }
+
+    private void submitTrustList() {
+        if (minecraft != null && minecraft.player != null) {
+            minecraft.player.connection.sendCommand("colony trust list");
+        }
+    }
+
+    private void submitTreatyProposal() {
+        if (minecraft == null || minecraft.player == null) return;
+        String target = treatyTargetInput.getValue().trim();
+        String exportItem = treatyExportItemInput.getValue().trim();
+        String returnItem = treatyReturnItemInput.getValue().trim();
+        if (!target.matches("[A-Za-z0-9_]{1,16}") || !validItemId(exportItem)
+                || (!returnItem.isBlank() && !returnItem.equals("credits") && !validItemId(returnItem))) {
+            minecraft.player.displayClientMessage(Component.literal("请检查目标玩家名和物品 ID 格式。"), true);
+            return;
+        }
+        try {
+            long exportRate = Long.parseLong(treatyExportRateInput.getValue().trim());
+            long returnRate = Long.parseLong(treatyReturnRateInput.getValue().trim());
+            if (exportRate < 1 || returnRate < 0) throw new NumberFormatException();
+            String returnArg = returnRate == 0 ? "none" : (returnItem.isBlank() ? "credits" : returnItem);
+            minecraft.player.connection.sendCommand("colony treaty propose " + target + " " + exportItem
+                    + " " + exportRate + " " + returnArg + " " + returnRate);
+        } catch (NumberFormatException error) {
+            minecraft.player.displayClientMessage(Component.literal("出口/返还速率必须是有效整数（出口至少 1，返还不小于 0）。"), true);
+        }
+    }
+
+    private boolean validItemId(String value) {
+        return value != null && value.matches("[A-Za-z0-9_.-]+:[A-Za-z0-9_./-]+");
+    }
+
+    private void sendTreatyCommand(String action, String rawId) {
+        if (minecraft == null || minecraft.player == null) return;
+        if ("list".equals(action)) {
+            minecraft.player.connection.sendCommand("colony treaty list");
+            return;
+        }
+        try {
+            long id = Long.parseLong(rawId.trim());
+            if (id < 1) throw new NumberFormatException();
+            minecraft.player.connection.sendCommand("colony treaty " + action + " " + id);
+        } catch (NumberFormatException error) {
+            minecraft.player.displayClientMessage(Component.literal("请输入有效的正整数协定 ID。"), true);
+        }
+    }
+
+    private void submitMarketAction(pioneer.colony.network.MarketActionPayload.Action action) {
+        if (minecraft == null || minecraft.player == null) return;
+        try {
+            if (action == pioneer.colony.network.MarketActionPayload.Action.CANCEL) {
+                long orderId = Long.parseLong(marketOrderIdInput.getValue().trim());
+                PacketDistributor.sendToServer(new pioneer.colony.network.MarketActionPayload(action, "", 0, 0, 0, orderId));
+                return;
+            }
+            String item = marketItemInput.getValue().trim();
+            long count = Long.parseLong(marketCountInput.getValue().trim());
+            long price = Long.parseLong(marketPriceInput.getValue().trim());
+            int days = Integer.parseInt(marketDaysInput.getValue().trim());
+            PacketDistributor.sendToServer(new pioneer.colony.network.MarketActionPayload(action, item, count, price, days, 0));
+        } catch (NumberFormatException error) {
+            minecraft.player.displayClientMessage(Component.literal("市场输入格式错误：数量/价格/天数/订单 ID 必须是整数。"), true);
+        }
     }
 
     private void sendButton(int id) {
@@ -101,7 +277,7 @@ public class ColonyCoreScreen extends AbstractContainerScreen<ColonyCoreMenu> {
     @Override
     public void containerTick() {
         super.containerTick();
-        if (menu.page() != lastPage || ClientResearchCacheChanged()) {
+        if (menu.page() != lastPage || widgetFlags() != lastWidgetFlags || ClientResearchCacheChanged()) {
             refreshPageWidgets();
         }
     }
@@ -187,13 +363,54 @@ public class ColonyCoreScreen extends AbstractContainerScreen<ColonyCoreMenu> {
                     ey += 16;
                 }
             }
+        } else if (page == 4) {
+            graphics.drawString(font, "星联市场 · 信用点/件", x, y + 12, 0xFF9AE6B4, false);
+            var payload = pioneer.colony.network.ClientMarketCache.latest;
+            if (payload == null) {
+                graphics.drawString(font, "等待市场数据同步……", x, y + 24, 0xFFA0AEC0, false);
+            } else {
+                int py = y + 23;
+                for (var entry : payload.prices()) {
+                    String itemLabel = entry.item().replace("minecraft:", "");
+                    if (itemLabel.length() > 18) itemLabel = itemLabel.substring(0, 17) + "…";
+                    String minLabel = String.format(java.util.Locale.ROOT, "%.1f", entry.min());
+                    String maxLabel = entry.max() >= 1_000_000.0 ? "∞"
+                            : String.format(java.util.Locale.ROOT, "%.1f", entry.max());
+                    graphics.drawString(font, itemLabel + " " + entry.price()
+                            + " [" + minLabel + "-" + maxLabel + "]", x, py, 0xFFE2E8F0, false);
+                    py += 9;
+                }
+                graphics.drawString(font, "我的挂单（price=0 为市价单）", x, y + 96, 0xFFF6E05E, false);
+                int oy = y + 107;
+                for (var order : payload.orders().stream().limit(3).toList()) {
+                    String price = order.limitPrice() == 0 ? "市价" : Long.toString(order.limitPrice());
+                    graphics.drawString(font, "#" + order.id() + " " + order.side() + " " + order.item()
+                            + " ×" + order.remaining() + " @" + price, x, oy, 0xFFA0AEC0, false);
+                    oy += 9;
+                }
+            }
+            graphics.drawString(font, "物品 ID", x, y + 132, 0xFFA0AEC0, false);
+            graphics.drawString(font, "数量", x, y + 151, 0xFFA0AEC0, false);
+            graphics.drawString(font, "限价", x + 50, y + 151, 0xFFA0AEC0, false);
+            graphics.drawString(font, "天数", x + 100, y + 151, 0xFFA0AEC0, false);
+            graphics.drawString(font, "订单 ID", x, y + 172, 0xFFA0AEC0, false);
+        } else if (page == 5) {
+            graphics.drawString(font, "城市间贸易协定", x, y + 12, 0xFF9AE6B4, false);
+            graphics.drawString(font, "目标总督 / 出口物品 ID", x, y + 28, 0xFFA0AEC0, false);
+            graphics.drawString(font, "出口/小时 / 返还物品 / 返还/小时", x, y + 42, 0xFFA0AEC0, false);
+            graphics.drawString(font, "协定 ID", x, y + 100, 0xFFA0AEC0, false);
         } else if (page == 2) {
             graphics.drawString(font, "城市管理", x, y + 12, 0xFFE2E8F0, false);
             graphics.drawString(font, "解散前置：先拆除全部建筑", x, y + 24, 0xFFA0AEC0, false);
             graphics.drawString(font, "解散将清除总部结构，退购地费 50%", x, y + 36, 0xFFA0AEC0, false);
             graphics.drawString(font, "（随下次创建殖民地发放）", x, y + 48, 0xFFA0AEC0, false);
+            if (menu.clientData(ColonyCoreMenu.SLOT_IS_OWNER) == 1) {
+                graphics.drawString(font, "信任名单：输入玩家名后授予访客/可信权限", x, y + 64, 0xFF9AE6B4, false);
+            } else {
+                graphics.drawString(font, "只有总督可以管理信任名单和解散殖民地", x, y + 64, 0xFFA0AEC0, false);
+            }
             if (menu.clientData(ColonyCoreMenu.SLOT_CONFIRMED) == 1) {
-                graphics.drawString(font, "已武装确认，再次点击生效", x, y + 64, 0xFFFC8181, false);
+                graphics.drawString(font, "已武装确认，再次点击生效", x, y + 100, 0xFFFC8181, false);
             }
         }
     }

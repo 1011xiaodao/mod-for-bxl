@@ -45,7 +45,7 @@ public final class EconomyTicker {
         long now = System.currentTimeMillis();
         long startNanos = System.nanoTime();
         for (Colony colony : data.all()) {
-            settleColony(colony, now, force);
+            settleColony(server, colony, now, force);
             // 威胁值收敛 + 档位触发（06 §6，随经济 tick 同频）
             pioneer.colony.raid.RaidManager.computeThreat(colony);
             pioneer.colony.raid.RaidManager.checkTrigger(server, colony);
@@ -73,7 +73,7 @@ public final class EconomyTicker {
         return lastColonyCount;
     }
 
-    private static void settleColony(Colony colony, long now, boolean force) {
+    private static void settleColony(MinecraftServer server, Colony colony, long now, boolean force) {
         if (colony.getLastTickWallTime() == 0L) {
             // 新建殖民地：从现在起算，不补算
             colony.setLastTickWallTime(now);
@@ -97,7 +97,7 @@ public final class EconomyTicker {
             }
             minutes = Math.min(gapMinutes, capMinutes);
         }
-        SettlementResult result = runSettlement(colony, minutes);
+        SettlementResult result = runSettlement(server, colony, minutes);
         colony.setLastTickWallTime(now);
         if (offlineCatchup) {
             OfflineSummary summary = new OfflineSummary(minutes, gapMinutes > capMinutes, now,
@@ -109,13 +109,18 @@ public final class EconomyTicker {
         }
     }
 
-    /** 对一个殖民地结算 minutes 分钟（纯公式，可离线批量）。 */
+    /** 对一个殖民地结算 minutes 分钟（纯公式，可离线批量；不提供服务端时四季项使用中性回退）。 */
     public static SettlementResult runSettlement(Colony colony, long minutes) {
+        return runSettlement(null, colony, minutes);
+    }
+
+    public static SettlementResult runSettlement(MinecraftServer server, Colony colony, long minutes) {
         SettlementResult result = new SettlementResult();
         if (colony.getHqState() == Colony.HqState.STOPPED) {
             result.events.add("总部停摆，殖民地公式暂停（原地修复后恢复）");
             return result;
         }
+        SeasonService.Snapshot season = SeasonService.snapshot(server);
 
         // —— 1) 人口食物消耗（决定食物充足率 → 幸福度 → 乘数） ——
         int population = colony.getPopulation();
@@ -144,21 +149,65 @@ public final class EconomyTicker {
             }
         }
 
-        // 幸福度（06 §8.3，占位数值；供暖因子未激活按 0.5 中性，不奖不罚）
+        // 幸福度与热能 Gauge：四季缺席时供暖项固定为 0.5 中性，不奖不罚。
         int residentSlots = 0;
+        int boilerTiers = 0;
+        double heatProductionRate = 0.0;
         for (BuildingInstance b : colony.getBuildings()) {
-            if (b.status() == BuildingInstance.Status.ACTIVE) {
-                residentSlots += BuildingDefinitions.get(b.definitionId())
-                        .map(d -> d.tierResidentSlots(b.tier())).orElse(0);
+            if (b.status() != BuildingInstance.Status.ACTIVE) continue;
+            BuildingDefinition def = BuildingDefinitions.get(b.definitionId()).orElse(null);
+            if (def == null) continue;
+            residentSlots += def.tierResidentSlots(b.tier());
+            if ("boiler_room".equals(b.definitionId())) {
+                boilerTiers += b.tier();
+                heatProductionRate += b.tier() * Config.HEAT_PRODUCTION_PER_BOILER_TIER_PER_MINUTE.get()
+                        * workerFillRateForBuilding(colony, b);
             }
         }
+        double heatCapacity = boilerTiers * Config.HEAT_CAPACITY_PER_BOILER_TIER.get();
+        if (season.available() && boilerTiers > 0 && heatProductionRate > 0.0) {
+            String fuelItem = Config.HEAT_FUEL_ITEM_ID.get().trim();
+            double expectedFuel = boilerTiers * Config.HEAT_FUEL_PER_BOILER_TIER_PER_HOUR.get()
+                    * minutes / 60.0 + colony.getHeatFuelCarry();
+            if (fuelItem.isBlank() || !Double.isFinite(expectedFuel) || expectedFuel <= 0.0) {
+                heatProductionRate = 0.0;
+                colony.setHeatFuelCarry(0.0);
+            } else {
+                long fuelDue = expectedFuel >= Long.MAX_VALUE ? Long.MAX_VALUE : (long) Math.floor(expectedFuel);
+                double fuelCarry = expectedFuel - Math.floor(expectedFuel);
+                long fuelAvailable = colony.countOf(fuelItem);
+                long fuelUsed = Math.min(fuelDue, fuelAvailable);
+                double fuelFactor = fuelDue <= 0 ? (fuelAvailable > 0 ? 1.0 : 0.0)
+                        : fuelUsed / (double) fuelDue;
+                if (fuelDue > fuelAvailable) fuelCarry = 0.0;
+                if (fuelUsed > 0) {
+                    long taken = colony.takeItems(fuelItem, fuelUsed);
+                    if (taken > 0) result.consumed.merge(fuelItem, taken, Long::sum);
+                }
+                colony.setHeatFuelCarry(fuelCarry);
+                heatProductionRate *= fuelFactor;
+                if (fuelFactor < 1.0) result.events.add("锅炉燃料不足，供热产能降至 "
+                        + Math.round(fuelFactor * 100.0) + "%（燃料 " + fuelItem + "）");
+            }
+        } else {
+            colony.setHeatFuelCarry(0.0);
+            if (!season.available()) heatProductionRate = 0.0;
+        }
+        double heatDemandRate = season.available()
+                ? residentSlots * Config.HEAT_DEMAND_PER_RESIDENT_SLOT_PER_MINUTE.get()
+                        * season.heatingDemandMultiplier()
+                : 0.0;
+        double heatSatisfaction = colony.gauge("pioneer_colony:heat").settle(
+                heatCapacity, heatProductionRate, heatDemandRate, minutes);
+        double heatingRate = season.available() ? heatSatisfaction : 0.5;
+        double farmOutputMultiplier = season.available() ? season.farmOutputMultiplier() : 1.0;
         double housingRate = colony.getPopulation() > 0
                 ? Math.min(1.0, residentSlots / (double) Math.max(1, colony.getPopulation()))
                 : 1.0;
         double happiness = RustEconomyAdapter.calculateHappiness(
                 new RustEconomyAdapter.HappinessInput(
                         Config.HAPPINESS_BASE.get(),
-                        Config.HAPPINESS_HEATING_WEIGHT.get(), 0.5,
+                        Config.HAPPINESS_HEATING_WEIGHT.get(), heatingRate,
                         Config.HAPPINESS_FOOD_WEIGHT.get(), foodRate,
                         Config.HAPPINESS_HOUSING_WEIGHT.get(), housingRate));
         colony.setHappiness(happiness);
@@ -198,8 +247,13 @@ public final class EconomyTicker {
             double maintenanceFactor = building.isMaintenanceSatisfied()
                     ? 1.0 : Config.MAINTENANCE_HALF_EFFICIENCY_FACTOR.get();
             // 全局加成 = 1 + colony 通道研究效果（标签命中，M6.3）；受损状态效率 50%（M6.4）
-            double globalBonus = (1.0 + colony.productionBonusFor(def.tags()))
+            double routeBonus = pioneer.colony.market.TradeTreatyManager.productionBonusFor(
+                    server, colony.uuid(), def.outputItem());
+            double globalBonus = (1.0 + colony.productionBonusFor(def.tags()) + routeBonus)
                     * (damaged ? Config.DAMAGED_EFFICIENCY_FACTOR.get() : 1.0);
+            if ("farm".equals(building.definitionId()) || def.tags().contains("pioneer_colony:farming")) {
+                globalBonus *= farmOutputMultiplier;
+            }
 
             // 生产（受损伤 M6.4 后在此并入建筑状态因子）。
             // 幸福度乘数只作用于产出（士气提升单位投入产出比），不放大消耗
@@ -229,7 +283,10 @@ public final class EconomyTicker {
             }
         }
 
-        // —— 3) 人口自然增长（食物盈余且有空床位；乘幸福度乘数；正式验收 M6.6） ——
+        // —— 3) 食堂烹饪：农场产出的原料可在同一结算周期转成可食用熟食 ——
+        cookAtCanteens(colony, minutes, result);
+
+        // —— 4) 人口自然增长（食物盈余且有空床位；乘幸福度乘数） ——
         int citizenCap = residentSlots + colony.getResearchCitizenCapBonus();
         if (foodRate >= 1.0 && colony.getPopulation() < citizenCap) {
             colony.setGrowthProgress(colony.getGrowthProgress()
@@ -242,6 +299,75 @@ public final class EconomyTicker {
             }
         }
         return result;
+    }
+
+    /** 复用经济岗位分配顺序估算某建筑当前在岗率，避免热能产量使用上一周期的滞后值。 */
+    private static double workerFillRateForBuilding(Colony colony, BuildingInstance selected) {
+        int remainingWorkers = colony.getPopulation();
+        for (BuildingInstance building : colony.getBuildings()) {
+            if (building.status() != BuildingInstance.Status.ACTIVE
+                    && building.status() != BuildingInstance.Status.DAMAGED) continue;
+            BuildingDefinition def = BuildingDefinitions.get(building.definitionId()).orElse(null);
+            if (def == null) continue;
+            int slots = def.tierWorkerSlots(building.tier());
+            int assigned = Math.min(remainingWorkers, slots);
+            remainingWorkers -= assigned;
+            if (building == selected) return slots == 0 ? 1.0 : assigned / (double) slots;
+        }
+        return 0.0;
+    }
+
+    /** 食堂配方以在岗厨师数决定产能；输入从殖民地缓冲扣除，输出仍受缓冲容量限制。 */
+    private static void cookAtCanteens(Colony colony, long minutes, SettlementResult result) {
+        if (minutes <= 0 || CookingRecipes.all().isEmpty()) return;
+        List<CookingRecipe> recipes = CookingRecipes.all().values().stream()
+                .sorted(Comparator.comparing(CookingRecipe::id)).toList();
+        for (BuildingInstance canteen : colony.getBuildings()) {
+            if (!"canteen".equals(canteen.definitionId())
+                    || (canteen.status() != BuildingInstance.Status.ACTIVE
+                    && canteen.status() != BuildingInstance.Status.DAMAGED)) continue;
+            BuildingDefinition def = BuildingDefinitions.get(canteen.definitionId()).orElse(null);
+            if (def == null) continue;
+            double workers = def.tierWorkerSlots(canteen.tier()) * canteen.getLastFillRate();
+            if (canteen.status() == BuildingInstance.Status.DAMAGED) {
+                workers *= Config.DAMAGED_EFFICIENCY_FACTOR.get();
+            }
+            if (!canteen.isMaintenanceSatisfied()) workers *= Config.MAINTENANCE_HALF_EFFICIENCY_FACTOR.get();
+            for (CookingRecipe recipe : recipes) {
+                double expected = recipe.batchesPerMinutePerWorker() * workers * minutes
+                        + canteen.cookingAccum(recipe.id());
+                if (!Double.isFinite(expected) || expected <= 0.0) continue;
+                long wanted = expected >= Long.MAX_VALUE ? Long.MAX_VALUE : (long) Math.floor(expected);
+                canteen.setCookingAccum(recipe.id(), expected - Math.floor(expected));
+                if (wanted <= 0) continue;
+
+                long availableBatches = Long.MAX_VALUE;
+                for (ItemCost input : recipe.inputs()) {
+                    availableBatches = Math.min(availableBatches, colony.countOf(input.item()) / input.count());
+                }
+                long outputBatches = colony.remainingCapacityFor(recipe.outputItem()) / recipe.outputCount();
+                long batches = Math.min(wanted, Math.min(availableBatches, outputBatches));
+                if (batches <= 0) {
+                    if (availableBatches <= 0) {
+                        result.events.add("食堂缺少烹饪原料：" + recipe.id());
+                    } else if (outputBatches <= 0) {
+                        result.events.add("食堂产物仓储已满：" + recipe.outputItem());
+                    }
+                    continue;
+                }
+                for (ItemCost input : recipe.inputs()) {
+                    long count = input.count() * batches;
+                    long taken = colony.takeItems(input.item(), count);
+                    if (taken > 0) result.consumed.merge(input.item(), taken, Long::sum);
+                }
+                long outputCount = recipe.outputCount() * batches;
+                long accepted = colony.insertOutput(recipe.outputItem(), outputCount);
+                if (accepted > 0) result.produced.merge(recipe.outputItem(), accepted, Long::sum);
+                if (accepted < outputCount) {
+                    result.events.add("食堂产物容量不足，损失 " + (outputCount - accepted) + " 个 " + recipe.outputItem());
+                }
+            }
+        }
     }
 
     /** 满足输入比 = min(各输入 库存/需求)，夹在 [0,1]。 */

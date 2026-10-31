@@ -1,0 +1,8 @@
+{
+  "input": [
+    { "item": "minecraft:chicken", "count": 1 },
+    { "item": "minecraft:coal", "count": 1 }
+  ],
+  "output": { "item": "minecraft:cooked_chicken", "count": 1 },
+  "batches_per_minute_per_worker": 0.5
+}

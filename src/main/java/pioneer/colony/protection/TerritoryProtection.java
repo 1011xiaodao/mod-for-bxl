@@ -126,17 +126,13 @@ public final class TerritoryProtection {
         if (colony == null) {
             return;
         }
-        // 开核心 GUI 权限在核心方块 useWithoutItem 内校验（owner/可信）；此处拦「点火」
+        // GUI 权限由 ColonyCoreBlockEntity.canPlayerOpen 统一判定（含访客贸易站例外）。
+        // 此处只拦截点火，避免在事件层重复实现 GUI 权限而误伤访客。
         if (!colony.isOwner(player.getUUID()) && !bypass(player)
+                && !(level.getBlockState(pos).getBlock() instanceof ColonyCoreBlock)
                 && player.getMainHandItem().is(Items.FLINT_AND_STEEL)) {
             event.setCanceled(true);
             player.displayClientMessage(Component.literal("领地内禁止点火。"), true);
-            return;
-        }
-        if (level.getBlockState(pos).getBlock() instanceof ColonyCoreBlock
-                && !colony.canOpenGui(player.getUUID()) && !bypass(player)) {
-            event.setCanceled(true);
-            player.displayClientMessage(Component.literal("需要「可信」权限才能操作「" + colony.getName() + "」的建筑 GUI。"), true);
         }
     }
 

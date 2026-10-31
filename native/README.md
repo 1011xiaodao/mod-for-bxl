@@ -77,6 +77,27 @@ JSON 接口目前提供 `calculate_happiness` 和 `calculate_market_fair_price` 
 4. 对 Minecraft 世界、实体、存档或网络的读写仍由 Java 适配层负责：Java 收集输入快照，Rust 返回计算结果，Java 验证并应用结果。
 5. Rust 响应使用 `{"ok":true,"value":...}` / `{"ok":false,"error":"..."}` 包装。参数名和 JSON 结构属于接口契约，修改时同步更新 Rust 单元测试。
 
+## 公共 ColonyApi 与 Gauge 扩展
+
+公共 API 位于 `pioneer.colony.api.ColonyApi`，由模组构造时注册；附属模组在服务端加载完成后调用 `ColonyApi.get()`。句柄不暴露可变的内部 `Colony`，写操作会检查服务端主线程并标记存档脏状态。
+
+```java
+ColonyApi api = ColonyApi.get();
+api.colonyOf(server, player.getUUID()).ifPresent(colony -> {
+    long credits = colony.getCredits();
+    boolean paid = colony.tryWithdrawCredits(25);
+    long wheatPrice = api.getMarketPrice(server, "minecraft:wheat");
+
+    // 余热回收、算力等外部资源通过 provider ID 贡献；每个 provider 覆盖自己的当期值。
+    colony.contributeGauge("megaconstruct:compute_hub", "pioneer_colony:heat",
+            500.0, 8.0, 0.0);
+});
+```
+
+附属模组可通过 `api.registerResourceType(new GaugeDefinition(namespace + ":" + path, name, unit, shortageFloor))` 注册资源类型，并使用 `settleGauge` 或 `contributeGauge` 接入产耗。贡献会在下次殖民地经济结算时与本体锅炉供热合并，结算后清空；附属模组应在服务端 tick 中持续更新当期贡献。市场挂单也有 `api.submitOrder(...)` 入口，但库存托管、手续费、贸易站要求和日成交额限制仍由本体统一执行。
+
+系统命令与手工验收步骤见 `docs/M6.6-M6.9系统验收手册.md`。当前代码级测试不替代真实 Serene Seasons 联测或公开服压力测试。
+
 ## FFI 安全约定
 
 - Java/Rust 边界只传 C 字符串和固定宽度标量；禁止传递 `String`、`Vec`、Rust 引用、Java 对象或由一侧分配而另一侧不按约定释放的指针。
